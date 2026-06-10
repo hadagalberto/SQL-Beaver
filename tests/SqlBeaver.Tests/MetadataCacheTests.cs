@@ -15,11 +15,13 @@ namespace SqlBeaver.Tests
         private sealed class FakeSource : IMetadataSource
         {
             public int CallCount;
+            public string LastAccessToken;
             public Func<Task<DbMetadata>> Handler = () => Task.FromResult(SampleMetadata());
 
-            public Task<DbMetadata> LoadAsync(string connectionString, CancellationToken cancellationToken)
+            public Task<DbMetadata> LoadAsync(string connectionString, string accessToken, CancellationToken cancellationToken)
             {
                 Interlocked.Increment(ref CallCount);
+                LastAccessToken = accessToken;
                 return Handler();
             }
         }
@@ -151,6 +153,19 @@ namespace SqlBeaver.Tests
             await cache.GetPendingLoadForTest("srv", "db");
             Assert.NotNull(cache.TryGet("srv", "db", "cs"));
             Assert.Equal(2, source.CallCount);
+        }
+
+        [Fact]
+        public async Task AccessToken_IsForwardedToSource()
+        {
+            var source = new FakeSource();
+            var cache = new MetadataCache(source, Ttl, Cooldown, () => DateTime.UtcNow);
+
+            cache.TryGet("srv", "db", "cs", "token-123");
+            await cache.GetPendingLoadForTest("srv", "db");
+
+            Assert.Equal("token-123", source.LastAccessToken);
+            Assert.NotNull(cache.TryGet("srv", "db", "cs", "token-123"));
         }
     }
 }

@@ -14,13 +14,16 @@ namespace SqlBeaver.Metadata
     {
         private const int CommandTimeoutSeconds = 5;
 
-        public async Task<DbMetadata> LoadAsync(string connectionString, CancellationToken cancellationToken)
+        public async Task<DbMetadata> LoadAsync(string connectionString, string accessToken, CancellationToken cancellationToken)
         {
             var schemas = new List<string>();
             var tables = new List<TableEntry>();
 
             using (var connection = new SqlConnection(connectionString))
             {
+                if (!string.IsNullOrEmpty(accessToken))
+                    connection.AccessToken = accessToken;
+
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
                 using (SqlCommand command = connection.CreateCommand())

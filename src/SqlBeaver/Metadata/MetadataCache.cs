@@ -56,9 +56,10 @@ namespace SqlBeaver.Metadata
         /// <summary>
         /// Retorna a metadata em cache (possivelmente vencida) ou null se ainda não
         /// carregada. Nunca bloqueia: cargas/refreshes acontecem em background e
-        /// ficam disponíveis em chamadas futuras.
+        /// ficam disponíveis em chamadas futuras. accessToken (Entra) é opcional e
+        /// encaminhado à fonte na carga.
         /// </summary>
-        public DbMetadata TryGet(string server, string database, string connectionString)
+        public DbMetadata TryGet(string server, string database, string connectionString, string accessToken = null)
         {
             Entry entry = _entries.GetOrAdd(Key(server, database), _ => new Entry());
             Exception abandonedLoad = null;
@@ -85,7 +86,7 @@ namespace SqlBeaver.Metadata
                 {
                     entry.LoadGeneration++;
                     entry.LoadStartedUtc = now;
-                    Task load = LoadIntoEntryAsync(entry, connectionString, entry.LoadGeneration);
+                    Task load = LoadIntoEntryAsync(entry, connectionString, accessToken, entry.LoadGeneration);
                     // Carga que completou sincronamente já limpou/atualizou o estado —
                     // não guardar um task completado, senão ele bloquearia recargas futuras.
                     if (!load.IsCompleted)
@@ -101,7 +102,7 @@ namespace SqlBeaver.Metadata
             return result;
         }
 
-        private async Task LoadIntoEntryAsync(Entry entry, string connectionString, int generation)
+        private async Task LoadIntoEntryAsync(Entry entry, string connectionString, string accessToken, int generation)
         {
             try
             {
@@ -109,7 +110,7 @@ namespace SqlBeaver.Metadata
                 // reais — SqlConnection.OpenAsync no net48 faz trabalho síncrono
                 // (pool, DNS) antes do primeiro await.
                 DbMetadata metadata = await Task.Run(
-                    () => _source.LoadAsync(connectionString, CancellationToken.None)).ConfigureAwait(false);
+                    () => _source.LoadAsync(connectionString, accessToken, CancellationToken.None)).ConfigureAwait(false);
 
                 lock (entry)
                 {

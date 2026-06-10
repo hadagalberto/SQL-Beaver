@@ -1,6 +1,7 @@
 using System;
 using System.Data.SqlClient;
 using System.Reflection;
+using Microsoft.VisualStudio.Shell;
 using SqlBeaver.Diagnostics;
 
 namespace SqlBeaver.Connection
@@ -10,6 +11,9 @@ namespace SqlBeaver.Connection
         public string Server { get; set; }
         public string Database { get; set; }
         public string ConnectionString { get; set; }
+
+        /// <summary>Token Entra da conexão viva do editor; null para auth Windows/SQL.</summary>
+        public string AccessToken { get; set; }
     }
 
     /// <summary>
@@ -73,6 +77,34 @@ namespace SqlBeaver.Connection
             var userName = GetProperty(uiConnectionInfo, "UserName") as string;
             var password = GetProperty(uiConnectionInfo, "Password") as string;
             string authenticationType = Convert.ToString(GetProperty(uiConnectionInfo, "AuthenticationType"));
+
+            if (LooksLikeEntra(userName, password, authenticationType))
+            {
+                string accessToken = GetLiveConnectionAccessToken();
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    LogEntraWithoutTokenOnce();
+                    return null; // degrada em silêncio: melhor sem sugestões que spam de erro 40607
+                }
+
+                var tokenBuilder = new SqlConnectionStringBuilder
+                {
+                    DataSource = server,
+                    InitialCatalog = database,
+                    ApplicationName = "SQL Beaver",
+                    ConnectTimeout = 10,
+                    Encrypt = true, // Azure exige TLS
+                    // sem Integrated Security / User ID / Password: incompatíveis com AccessToken
+                };
+
+                return new ActiveConnection
+                {
+                    Server = server,
+                    Database = database,
+                    ConnectionString = tokenBuilder.ConnectionString,
+                    AccessToken = accessToken,
+                };
+            }
 
             var builder = new SqlConnectionStringBuilder
             {
@@ -176,6 +208,81 @@ namespace SqlBeaver.Connection
             if (_loggedFailure) return;
             _loggedFailure = true;
             Log.Error(message + " (a extensão seguirá sem sugestões)", ex);
+        }
+
+        private static bool _loggedEntraWithoutToken;
+
+        // UPN sem senha (Entra MFA) ou dica explícita no tipo de autenticação.
+        private static bool LooksLikeEntra(string userName, string password, string authenticationType)
+        {
+            if (!string.IsNullOrEmpty(authenticationType))
+            {
+                string[] hints = { "active directory", "activedirectory", "entra", "azure", "mfa", "universal", "interactive" };
+                foreach (string hint in hints)
+                {
+                    if (authenticationType.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+
+            return string.IsNullOrEmpty(password) &&
+                   !string.IsNullOrEmpty(userName) &&
+                   userName.IndexOf('@') >= 0 &&
+                   userName.IndexOf('\\') < 0;
+        }
+
+        // Caminho SSMS 21/22: ISqlEditorService.GetCurrentConnection() devolve a conexão
+        // viva (já autenticada) do editor ativo; o AccessToken dela é reutilizável.
+        private static string GetLiveConnectionAccessToken()
+        {
+            try
+            {
+                Type interfaceType = FindLoadedType("Microsoft.SqlServer.Management.UI.VSIntegration.ISqlEditorService");
+                Type serviceType = FindLoadedType("Microsoft.SqlServer.Management.UI.VSIntegration.SSqlEditorService") ?? interfaceType;
+                if (interfaceType == null)
+                    return null;
+
+                object service =
+                    TryGetGlobalService(serviceType) ??
+                    TryGetGlobalService(interfaceType);
+                if (service == null)
+                    return null;
+
+                MethodInfo getCurrentConnection =
+                    interfaceType.GetMethod("GetCurrentConnection") ??
+                    service.GetType().GetMethod("GetCurrentConnection");
+                object liveConnection = getCurrentConnection?.Invoke(service, null);
+                if (liveConnection == null)
+                    return null;
+
+                return GetProperty(liveConnection, "AccessToken") as string;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static object TryGetGlobalService(Type serviceType)
+        {
+            if (serviceType == null)
+                return null;
+            try
+            {
+                return Package.GetGlobalService(serviceType)
+                    ?? Microsoft.VisualStudio.Shell.ServiceProvider.GlobalProvider.GetService(serviceType);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void LogEntraWithoutTokenOnce()
+        {
+            if (_loggedEntraWithoutToken) return;
+            _loggedEntraWithoutToken = true;
+            Log.Info("Conexão Microsoft Entra detectada, mas sem token acessível na conexão viva — sem sugestões nesta janela.");
         }
     }
 }

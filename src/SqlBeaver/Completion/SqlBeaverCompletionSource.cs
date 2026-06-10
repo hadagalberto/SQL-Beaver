@@ -117,7 +117,7 @@ namespace SqlBeaver.Completion
                     return Task.FromResult(CompletionContext.Empty);
 
                 DbMetadata metadata = _cache.TryGet(
-                    connection.Server, connection.Database, connection.ConnectionString);
+                    connection.Server, connection.Database, connection.ConnectionString, connection.AccessToken);
                 if (metadata == null)
                     return Task.FromResult(CompletionContext.Empty); // carga disparada em background
 
