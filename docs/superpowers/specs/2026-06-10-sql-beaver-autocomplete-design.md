@@ -76,15 +76,19 @@ Princípio: **nunca atrapalhar a digitação**.
 
 Duplo clique no `.vsix` (suportado oficialmente no SSMS 21+); gerenciável pelo menu Extensions do SSMS. Uso pessoal — sem assinatura ou marketplace no v1.
 
-## Riscos conhecidos
+## Riscos conhecidos (atualizados após pesquisa de 2026-06-10)
 
-| Risco | Mitigação |
+| Risco | Status |
 |---|---|
-| Content type exato do editor T-SQL no SSMS 22 (ex.: "SQL Server Tools") | Primeiro passo da implementação: descobrir empiricamente no SSMS do usuário; registrar o provider para os candidatos conhecidos |
-| Identificador de install target no `source.extension.vsixmanifest` para SSMS | Descobrir inspecionando a instalação do SSMS 22 e extensões que funcionam nele (ex.: ssms-executor, Visual Commander) |
-| Internals do SSMS mudarem em updates | Reflection defensiva + degradação silenciosa para "sem sugestões" |
+| Content type do editor T-SQL no SSMS 22 | **Resolvido:** `"SQL Server Tools"` (+ `"SQL"` como segundo registro), confirmado por extensões reais (RainbowBraces, VSSpellChecker, OpenHint-SQL). O provider loga o content type real no Output pane na primeira ativação para confirmação empírica |
+| Install target no `source.extension.vsixmanifest` | **Resolvido:** `Id="Microsoft.VisualStudio.Ssms"`, `Version="[22.0,)"`, `ProductArchitecture=amd64` — extraído dos manifests internos do SSMS 22 instalado e do SqlProjectPowerTools (ErikEJ) |
+| Receita de build/csproj para VSIX SSMS 22 | **Resolvido:** csproj SDK-style net48 com `Microsoft.VSSDK.BuildTools` 18.x + `Community.VisualStudio.Toolkit.17`, comprovado pelo SqlProjectPowerTools |
+| API interna para conexão ativa | **Resolvido (padrão confirmado):** `ServiceCache.ScriptFactory.CurrentlyActiveWndConnectionInfo.UIConnectionInfo` via reflection, usado por AxialSqlTools, SSMSPlus, OpenHint-SQL e outros. Reflection defensiva + degradação silenciosa permanecem como mitigação para updates futuros |
+| API de completion no SSMS | **Risco residual:** o OpenHint-SQL (extensão equivalente, MIT) optou por popup WPF próprio em vez de `IAsyncCompletionSource` — possivelmente por compatibilidade com SSMS 18–20 (fora do nosso escopo). Seguimos com a API nativa; se o broker de completion não disparar no editor do SSMS 22, o plano B é o modelo do OpenHint (command filter + popup próprio) |
 
-Plano B para os dois primeiros riscos: examinar como o [ssms-executor](https://github.com/devvcat/ssms-executor) resolve no SSMS 21+.
+## Referência de implementação
+
+[OpenHint-SQL](https://github.com/Jarvis81/OpenHint-SQL) (MIT) é uma extensão open-source equivalente (SSMS 18–22) descoberta durante a pesquisa. O usuário optou por construir o SQL Beaver do zero mesmo assim, usando-o como referência técnica — em especial o `ConnectionTracker` (reflection) e as lições de empacotamento (ex.: evitar dependências NuGet com tipos em assinaturas de POCOs MEF).
 
 ## Referências
 
