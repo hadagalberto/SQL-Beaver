@@ -194,6 +194,12 @@ namespace SqlBeaver.Connection
         private static object GetProperty(object instance, string propertyName)
             => instance?.GetType().GetProperty(propertyName)?.GetValue(instance);
 
+        private static object GetPropertySafe(object instance, string propertyName)
+        {
+            try { return GetProperty(instance, propertyName); }
+            catch { return null; }
+        }
+
         private static Type FindLoadedType(string fullTypeName)
         {
             foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
@@ -231,6 +237,9 @@ namespace SqlBeaver.Connection
             public string DataSource;
         }
 
+        private static bool _loggedNoService;
+        private static bool _loggedNoConnection;
+
         private static LiveConnectionInfo GetLiveConnectionInfo()
         {
             try
@@ -244,21 +253,44 @@ namespace SqlBeaver.Connection
                     TryGetGlobalService(serviceType) ??
                     TryGetGlobalService(interfaceType);
                 if (service == null)
+                {
+                    if (!_loggedNoService)
+                    {
+                        _loggedNoService = true;
+                        Log.Info("ISqlEditorService não resolvido — sem conexão viva disponível.");
+                    }
                     return null;
+                }
 
                 MethodInfo getCurrentConnection =
                     interfaceType.GetMethod("GetCurrentConnection") ??
                     service.GetType().GetMethod("GetCurrentConnection");
                 object liveConnection = getCurrentConnection?.Invoke(service, null);
                 if (liveConnection == null)
-                    return null;
-
-                return new LiveConnectionInfo
                 {
-                    AccessToken = GetProperty(liveConnection, "AccessToken") as string,
-                    Database = GetProperty(liveConnection, "Database") as string,
-                    DataSource = GetProperty(liveConnection, "DataSource") as string,
+                    if (!_loggedNoConnection)
+                    {
+                        _loggedNoConnection = true;
+                        Log.Info("GetCurrentConnection retornou null — nenhuma janela de query ativa com conexão viva.");
+                    }
+                    return null;
+                }
+
+                var info = new LiveConnectionInfo
+                {
+                    AccessToken = GetPropertySafe(liveConnection, "AccessToken") as string,
+                    Database    = GetPropertySafe(liveConnection, "Database")    as string,
+                    DataSource  = GetPropertySafe(liveConnection, "DataSource")  as string,
                 };
+
+                if (string.IsNullOrEmpty(info.AccessToken) && !_loggedLiveConnectionShape)
+                {
+                    _loggedLiveConnectionShape = true;
+                    Log.Info("Conexão viva sem AccessToken legível: tipo=" + liveConnection.GetType().FullName +
+                             ", Database=" + (info.Database ?? "-") + ", DataSource=" + (info.DataSource ?? "-") + ".");
+                }
+
+                return info;
             }
             catch
             {
@@ -268,6 +300,7 @@ namespace SqlBeaver.Connection
 
         private static bool _loggedEntraWithoutToken;
         private static bool _loggedEntraResolved;
+        private static bool _loggedLiveConnectionShape;
 
         // UPN sem senha (Entra MFA) ou dica explícita no tipo de autenticação.
         private static bool LooksLikeEntra(string userName, string password, string authenticationType)

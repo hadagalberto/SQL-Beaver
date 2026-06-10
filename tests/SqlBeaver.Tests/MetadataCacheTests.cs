@@ -167,5 +167,41 @@ namespace SqlBeaver.Tests
             Assert.Equal("token-123", source.LastAccessToken);
             Assert.NotNull(cache.TryGet("srv", "db", "cs", "token-123"));
         }
+
+        [Fact]
+        public async Task Invalidate_ForcesReloadOnNextTryGet()
+        {
+            var source = new FakeSource();
+            var cache = new MetadataCache(source, Ttl, Cooldown, () => DateTime.UtcNow);
+
+            cache.TryGet("srv", "db", "cs");
+            await cache.GetPendingLoadForTest("srv", "db");
+            Assert.NotNull(cache.TryGet("srv", "db", "cs"));
+            Assert.Equal(1, source.CallCount);
+
+            cache.Invalidate("srv", "db");
+
+            Assert.Null(cache.TryGet("srv", "db", "cs")); // frio de novo: recarga disparada
+            await cache.GetPendingLoadForTest("srv", "db");
+            Assert.Equal(2, source.CallCount);
+            Assert.NotNull(cache.TryGet("srv", "db", "cs"));
+        }
+
+        [Fact]
+        public async Task InvalidateAll_ClearsEveryEntry()
+        {
+            var source = new FakeSource();
+            var cache = new MetadataCache(source, Ttl, Cooldown, () => DateTime.UtcNow);
+
+            cache.TryGet("srv1", "db", "cs");
+            cache.TryGet("srv2", "db", "cs");
+            await cache.GetPendingLoadForTest("srv1", "db");
+            await cache.GetPendingLoadForTest("srv2", "db");
+
+            cache.InvalidateAll();
+
+            Assert.Null(cache.TryGet("srv1", "db", "cs"));
+            Assert.Null(cache.TryGet("srv2", "db", "cs"));
+        }
     }
 }

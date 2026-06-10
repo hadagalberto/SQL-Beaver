@@ -24,7 +24,7 @@ namespace SqlBeaver.Completion
     [ContentType("SQL")]
     public sealed class SqlBeaverCompletionSourceProvider : IAsyncCompletionSourceProvider
     {
-        private static readonly MetadataCache Cache = CreateCache();
+        internal static MetadataCache Cache { get; } = CreateCache();
 
         private static MetadataCache CreateCache()
         {

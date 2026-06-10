@@ -151,6 +151,17 @@ namespace SqlBeaver.Metadata
             }
         }
 
+        /// <summary>Descarta a entrada de (servidor, database); a próxima TryGet recarrega.
+        /// Cargas em andamento mantêm referência à Entry removida e atualizam um objeto
+        /// órfão — inofensivo por design.</summary>
+        public void Invalidate(string server, string database)
+            => _entries.TryRemove(Key(server, database), out _);
+
+        /// <summary>Descarta todas as entradas.
+        /// Cargas em andamento mantêm referência à Entry removida e atualizam um objeto
+        /// órfão — inofensivo por design.</summary>
+        public void InvalidateAll() => _entries.Clear();
+
         internal Task GetPendingLoadForTest(string server, string database)
         {
             if (_entries.TryGetValue(Key(server, database), out Entry entry))

@@ -26,6 +26,7 @@ namespace SqlBeaver
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             Log.Info("SQL Beaver inicializado.");
             Grid.GridCommandBarMenu.Initialize();
+            Grid.EditorCommandBarMenu.Initialize();
         }
     }
 }
