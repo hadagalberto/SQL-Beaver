@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace SqlBeaver.Analysis
 {
@@ -9,17 +8,6 @@ namespace SqlBeaver.Analysis
     /// </summary>
     public static class KeywordCaseFixer
     {
-        private static readonly HashSet<string> Keywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "SELECT", "FROM", "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "CROSS",
-            "APPLY", "ON", "AND", "OR", "NOT", "NULL", "IS", "IN", "EXISTS", "LIKE", "BETWEEN",
-            "GROUP", "BY", "ORDER", "HAVING", "DISTINCT", "TOP", "AS", "UNION", "ALL",
-            "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE", "MERGE", "OUTPUT",
-            "CASE", "WHEN", "THEN", "ELSE", "END", "BEGIN", "IF", "WHILE", "RETURN",
-            "DECLARE", "EXEC", "EXECUTE", "CREATE", "ALTER", "DROP", "TABLE", "VIEW", "INDEX",
-            "PROCEDURE", "PROC", "FUNCTION", "TRIGGER", "USE", "GO", "WITH", "OVER", "PARTITION",
-            "ASC", "DESC",
-        };
 
         /// <summary>
         /// text deve terminar no separador recém-digitado (último char). Retorna true
@@ -61,7 +49,7 @@ namespace SqlBeaver.Analysis
             string word = text.Substring(i + 1, wordEnd - i);
             if (word[0] == '@' || word[0] == '#')
                 return false;
-            if (!Keywords.Contains(word))
+            if (!SqlKeywords.All.Contains(word))
                 return false;
 
             string upper = word.ToUpperInvariant();

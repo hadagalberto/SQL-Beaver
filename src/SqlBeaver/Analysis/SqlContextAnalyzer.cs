@@ -64,9 +64,15 @@ namespace SqlBeaver.Analysis
             if (hasWhitespaceGap && IsAny(previousWord, BlockedKeywords))
                 return SqlContext.None;
 
-            return partial.Length > 0
-                ? new SqlContext(SqlContextKind.FreeIdentifier, null, partial, partialStart)
-                : SqlContext.None;
+            if (partial.Length == 0)
+                return SqlContext.None;
+
+            // Digitação livre: silêncio enquanto o parcial ainda pode ser uma keyword
+            // (digitar "sele" a caminho de SELECT não deve sugerir tabelas).
+            if (SqlKeywords.IsPrefixOfAny(partial))
+                return SqlContext.None;
+
+            return new SqlContext(SqlContextKind.FreeIdentifier, null, partial, partialStart);
         }
 
         /// <summary>Estado de comentário/string na posição dada (início do texto como âncora).</summary>

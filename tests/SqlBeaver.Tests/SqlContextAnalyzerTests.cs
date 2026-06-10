@@ -152,6 +152,37 @@ namespace SqlBeaver.Tests
             Assert.Equal(SqlContextKind.None, Analyze(".").Kind);
         }
 
+        // ---- digitação livre não dispara enquanto se digita uma keyword ----
+
+        [Theory]
+        [InlineData("sele")]      // prefixo de SELECT
+        [InlineData("SELE")]
+        [InlineData("sel")]
+        [InlineData("upd")]       // prefixo de UPDATE
+        [InlineData("WHERE x = 1 ord")] // prefixo de ORDER
+        [InlineData("end")]       // keyword exata
+        public void FreeTyping_KeywordPrefix_ReturnsNone(string text)
+        {
+            Assert.Equal(SqlContextKind.None, Analyze(text).Kind);
+        }
+
+        [Fact]
+        public void FreeTyping_DivergesFromKeywords_SuggestsAgain()
+        {
+            var ctx = Analyze("seleco"); // não é mais prefixo de SELECT
+            Assert.Equal(SqlContextKind.FreeIdentifier, ctx.Kind);
+            Assert.Equal("seleco", ctx.Partial);
+        }
+
+        [Fact]
+        public void AfterFrom_KeywordLikePartial_StillSuggests()
+        {
+            // o guard vale só para digitação livre; pós-FROM continua sugerindo
+            var ctx = Analyze("SELECT * FROM sel");
+            Assert.Equal(SqlContextKind.AfterFromJoin, ctx.Kind);
+            Assert.Equal("sel", ctx.Partial);
+        }
+
         // ---- keywords bloqueadas ----
 
         [Theory]
