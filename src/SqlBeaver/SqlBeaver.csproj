@@ -29,6 +29,7 @@
     <None Update="source.extension.vsixmanifest">
       <SubType>Designer</SubType>
     </None>
+    <InternalsVisibleTo Include="SqlBeaver.Tests" />
   </ItemGroup>
 
 </Project>
