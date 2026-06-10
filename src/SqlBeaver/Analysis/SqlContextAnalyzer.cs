@@ -69,7 +69,11 @@ namespace SqlBeaver.Analysis
                 : SqlContext.None;
         }
 
-        private static bool IsInsideCommentOrString(string text, int start, int end)
+        /// <summary>Estado de comentário/string na posição dada (início do texto como âncora).</summary>
+        internal static bool IsInsideCommentOrStringAt(string text, int position)
+            => IsInsideCommentOrString(text, 0, position);
+
+        internal static bool IsInsideCommentOrString(string text, int start, int end)
         {
             int blockCommentDepth = 0;
             bool inLineComment = false, inString = false, inBracket = false, inQuotedIdent = false;
