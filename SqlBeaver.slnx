@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SqlBeaver/SqlBeaver.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SqlBeaver.Tests/SqlBeaver.Tests.csproj" />
+  </Folder>
+</Solution>
