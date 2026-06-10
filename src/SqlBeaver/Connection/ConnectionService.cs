@@ -14,6 +14,10 @@ namespace SqlBeaver.Connection
 
         /// <summary>Token Entra da conexão viva do editor; null para auth Windows/SQL.</summary>
         public string AccessToken { get; set; }
+
+        /// <summary>Tipo runtime do provider da conexão viva (ex.: Microsoft.Data.SqlClient.SqlConnection).
+        /// Preenchido no caminho Entra MFA sem token; null nos demais modos.</summary>
+        public Type ProviderConnectionType { get; set; }
     }
 
     /// <summary>
@@ -81,7 +85,7 @@ namespace SqlBeaver.Connection
             if (LooksLikeEntra(userName, password, authenticationType))
             {
                 LiveConnectionInfo live = GetLiveConnectionInfo();
-                if (live == null || string.IsNullOrEmpty(live.AccessToken))
+                if (live == null)
                 {
                     LogEntraWithoutTokenOnce();
                     return null; // degrada em silêncio: melhor sem sugestões que spam de erro 40607
@@ -95,29 +99,59 @@ namespace SqlBeaver.Connection
                 if (!string.IsNullOrEmpty(live.DataSource))
                     server = live.DataSource;
 
-                var tokenBuilder = new SqlConnectionStringBuilder
+                if (!string.IsNullOrEmpty(live.AccessToken))
                 {
-                    DataSource = server,
-                    InitialCatalog = database,
-                    ApplicationName = "SQL Beaver",
-                    ConnectTimeout = 10,
-                    Encrypt = true, // Azure exige TLS
-                    // sem Integrated Security / User ID / Password: incompatíveis com AccessToken
-                };
+                    // Modo (b): token Entra disponível na conexão viva — usa System.Data.SqlClient com AccessToken.
+                    var tokenBuilder = new SqlConnectionStringBuilder
+                    {
+                        DataSource = server,
+                        InitialCatalog = database,
+                        ApplicationName = "SQL Beaver",
+                        ConnectTimeout = 10,
+                        Encrypt = true, // Azure exige TLS
+                        // sem Integrated Security / User ID / Password: incompatíveis com AccessToken
+                    };
 
-                if (!_loggedEntraResolved)
-                {
-                    _loggedEntraResolved = true;
-                    Log.Info($"Conexão Entra resolvida: servidor={server}, database={database} (via conexão viva: db={live.Database ?? "-"}).");
+                    if (!_loggedEntraResolved)
+                    {
+                        _loggedEntraResolved = true;
+                        Log.Info($"Conexão Entra resolvida: servidor={server}, database={database} (via conexão viva: db={live.Database ?? "-"}).");
+                    }
+
+                    return new ActiveConnection
+                    {
+                        Server = server,
+                        Database = database,
+                        ConnectionString = tokenBuilder.ConnectionString,
+                        AccessToken = live.AccessToken,
+                    };
                 }
 
-                return new ActiveConnection
+                if (!string.IsNullOrEmpty(live.ConnectionString))
                 {
-                    Server = server,
-                    Database = database,
-                    ConnectionString = tokenBuilder.ConnectionString,
-                    AccessToken = live.AccessToken,
-                };
+                    // Modo (c): sem token mas com ConnectionString legível — clona o provider da
+                    // conexão viva (Microsoft.Data.SqlClient) para que o MSAL do processo autentique.
+                    var csBuilder = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = live.ConnectionString };
+                    csBuilder["Initial Catalog"] = database;
+                    csBuilder["Application Name"] = "SQL Beaver";
+
+                    if (!_loggedEntraResolved)
+                    {
+                        _loggedEntraResolved = true;
+                        Log.Info($"Conexão Entra resolvida via provider clonado: servidor={server}, database={database}, tipo={live.ConnectionType?.FullName ?? "-"}.");
+                    }
+
+                    return new ActiveConnection
+                    {
+                        Server = server,
+                        Database = database,
+                        ConnectionString = csBuilder.ConnectionString,
+                        ProviderConnectionType = live.ConnectionType,
+                    };
+                }
+
+                LogEntraWithoutTokenOnce();
+                return null;
             }
 
             var builder = new SqlConnectionStringBuilder
@@ -235,6 +269,8 @@ namespace SqlBeaver.Connection
             public string AccessToken;
             public string Database;
             public string DataSource;
+            public string ConnectionString;
+            public Type ConnectionType;
         }
 
         private static bool _loggedNoService;
@@ -278,16 +314,19 @@ namespace SqlBeaver.Connection
 
                 var info = new LiveConnectionInfo
                 {
-                    AccessToken = GetPropertySafe(liveConnection, "AccessToken") as string,
-                    Database    = GetPropertySafe(liveConnection, "Database")    as string,
-                    DataSource  = GetPropertySafe(liveConnection, "DataSource")  as string,
+                    AccessToken      = GetPropertySafe(liveConnection, "AccessToken")      as string,
+                    Database         = GetPropertySafe(liveConnection, "Database")         as string,
+                    DataSource       = GetPropertySafe(liveConnection, "DataSource")       as string,
+                    ConnectionString = GetPropertySafe(liveConnection, "ConnectionString") as string,
+                    ConnectionType   = liveConnection.GetType(),
                 };
 
                 if (string.IsNullOrEmpty(info.AccessToken) && !_loggedLiveConnectionShape)
                 {
                     _loggedLiveConnectionShape = true;
                     Log.Info("Conexão viva sem AccessToken legível: tipo=" + liveConnection.GetType().FullName +
-                             ", Database=" + (info.Database ?? "-") + ", DataSource=" + (info.DataSource ?? "-") + ".");
+                             ", Database=" + (info.Database ?? "-") + ", DataSource=" + (info.DataSource ?? "-") +
+                             ", ConnectionString legível=" + (!string.IsNullOrEmpty(info.ConnectionString) ? "sim" : "não") + ".");
                 }
 
                 return info;
@@ -340,7 +379,7 @@ namespace SqlBeaver.Connection
         {
             if (_loggedEntraWithoutToken) return;
             _loggedEntraWithoutToken = true;
-            Log.Info("Conexão Microsoft Entra detectada, mas sem token acessível na conexão viva — sem sugestões nesta janela.");
+            Log.Info("Conexão Microsoft Entra detectada, mas sem token e sem connection string legível na conexão viva — sem sugestões nesta janela.");
         }
     }
 }

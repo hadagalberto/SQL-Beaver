@@ -56,10 +56,10 @@ namespace SqlBeaver.Metadata
         /// <summary>
         /// Retorna a metadata em cache (possivelmente vencida) ou null se ainda não
         /// carregada. Nunca bloqueia: cargas/refreshes acontecem em background e
-        /// ficam disponíveis em chamadas futuras. accessToken (Entra) é opcional e
-        /// encaminhado à fonte na carga.
+        /// ficam disponíveis em chamadas futuras. O <see cref="MetadataRequest"/> encapsula
+        /// connection string, token Entra e/ou tipo do provider e é encaminhado à fonte na carga.
         /// </summary>
-        public DbMetadata TryGet(string server, string database, string connectionString, string accessToken = null)
+        public DbMetadata TryGet(string server, string database, MetadataRequest request)
         {
             Entry entry = _entries.GetOrAdd(Key(server, database), _ => new Entry());
             Exception abandonedLoad = null;
@@ -86,7 +86,7 @@ namespace SqlBeaver.Metadata
                 {
                     entry.LoadGeneration++;
                     entry.LoadStartedUtc = now;
-                    Task load = LoadIntoEntryAsync(entry, connectionString, accessToken, entry.LoadGeneration);
+                    Task load = LoadIntoEntryAsync(entry, request, entry.LoadGeneration);
                     // Carga que completou sincronamente já limpou/atualizou o estado —
                     // não guardar um task completado, senão ele bloquearia recargas futuras.
                     if (!load.IsCompleted)
@@ -102,7 +102,7 @@ namespace SqlBeaver.Metadata
             return result;
         }
 
-        private async Task LoadIntoEntryAsync(Entry entry, string connectionString, string accessToken, int generation)
+        private async Task LoadIntoEntryAsync(Entry entry, MetadataRequest request, int generation)
         {
             try
             {
@@ -110,7 +110,7 @@ namespace SqlBeaver.Metadata
                 // reais — SqlConnection.OpenAsync no net48 faz trabalho síncrono
                 // (pool, DNS) antes do primeiro await.
                 DbMetadata metadata = await Task.Run(
-                    () => _source.LoadAsync(connectionString, accessToken, CancellationToken.None)).ConfigureAwait(false);
+                    () => _source.LoadAsync(request, CancellationToken.None)).ConfigureAwait(false);
 
                 lock (entry)
                 {

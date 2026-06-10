@@ -83,7 +83,8 @@ namespace SqlBeaver.Grid
 
                 cache.Invalidate(connection.Server, connection.Database);
                 // dispara a recarga já, para o próximo popup vir quente
-                cache.TryGet(connection.Server, connection.Database, connection.ConnectionString, connection.AccessToken);
+                cache.TryGet(connection.Server, connection.Database,
+                    new SqlBeaver.Metadata.MetadataRequest { ConnectionString = connection.ConnectionString, AccessToken = connection.AccessToken, ProviderConnectionType = connection.ProviderConnectionType });
                 ShowStatus($"cache de [{connection.Database}] atualizando em background.");
                 Log.Info($"Refresh cache: [{connection.Server}].[{connection.Database}] invalidado e recarregando.");
             }
