@@ -22,6 +22,260 @@ namespace SqlBeaver.Grid
         /// <summary>Linhas exportadas no máximo por comando (proteção contra grids gigantes).</summary>
         internal const int MaxRows = 10000;
 
+        // ------------------------------------------------------------------ //
+        //  Modelo de seleção                                                   //
+        // ------------------------------------------------------------------ //
+
+        internal sealed class GridSelection
+        {
+            /// <summary>Primeira coluna de dados selecionada (>= 1; coluna 0 é a régua).</summary>
+            public int FirstColumn;
+            /// <summary>União das linhas de todos os blocos selecionados.</summary>
+            public SortedSet<long> RowIndexes;
+            /// <summary>Total de células selecionadas (desconta a régua).</summary>
+            public long TotalCellCount;
+            /// <summary>Dump bruto dos blocos para diagnóstico.</summary>
+            public List<string> BlockDump;
+        }
+
+        /// <summary>
+        /// Lê os blocos de seleção da grid. Retorna null se não houver seleção válida
+        /// (nenhuma célula de dados selecionada) ou em falha.
+        /// </summary>
+        public static GridSelection ReadSelection(object gridControl)
+        {
+            try
+            {
+                var selectedCells = gridControl.GetType().GetProperty("SelectedCells")?.GetValue(gridControl) as IEnumerable;
+                if (selectedCells == null) return null;
+
+                var selection = new GridSelection
+                {
+                    FirstColumn = -1,
+                    RowIndexes  = new SortedSet<long>(),
+                    BlockDump   = new List<string>(),
+                };
+
+                foreach (object block in selectedCells)
+                {
+                    Type blockType = block.GetType();
+                    int  x      = Convert.ToInt32(blockType.GetProperty("X")?.GetValue(block));
+                    int  right  = Convert.ToInt32(blockType.GetProperty("Right")?.GetValue(block));
+                    long y      = Convert.ToInt64(blockType.GetProperty("Y")?.GetValue(block));
+                    long bottom = Convert.ToInt64(blockType.GetProperty("Bottom")?.GetValue(block));
+
+                    selection.BlockDump.Add($"x={x},right={right},y={y},bottom={bottom}");
+
+                    int dataLeft = Math.Max(1, x); // coluna 0 é a régua de números de linha
+                    if (right < dataLeft || bottom < y)
+                        continue; // bloco vazio/degenerado
+
+                    if (selection.FirstColumn < 0)
+                        selection.FirstColumn = dataLeft;
+
+                    selection.TotalCellCount += (long)(right - dataLeft + 1) * (bottom - y + 1);
+                    for (long r = y; r <= bottom && selection.RowIndexes.Count < MaxRows; r++)
+                        selection.RowIndexes.Add(r);
+                }
+
+                return selection.FirstColumn < 0 ? null : selection;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Falha ao ler a seleção da grid", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Seleção "de verdade": mais de uma célula (a célula corrente não conta).
+        /// </summary>
+        public static bool IsRealSelection(GridSelection selection)
+            => selection != null && selection.TotalCellCount > 1;
+
+        // ------------------------------------------------------------------ //
+        //  Leitura de dados                                                    //
+        // ------------------------------------------------------------------ //
+
+        /// <summary>Lê a grid inteira (até MaxRows). Retorna null em falha.</summary>
+        public static GridData ReadAll(object gridControl, out bool truncated)
+        {
+            truncated = false;
+            try
+            {
+                Type gridType = gridControl.GetType();
+                object storage = gridType.GetProperty("GridStorage")?.GetValue(gridControl);
+                if (storage == null) return null;
+
+                long numRows = Convert.ToInt64(storage.GetType().GetMethod("NumRows")?.Invoke(storage, null));
+                int columnsNumber = Convert.ToInt32(gridType.GetProperty("ColumnsNumber")?.GetValue(gridControl));
+
+                MethodInfo getCell = GetCellMethod(storage);
+                if (getCell == null || columnsNumber < 2) return null;
+
+                IReadOnlyList<GridColumn> columns = ReadColumns(gridControl, gridType, storage, columnsNumber);
+
+                long rowsToRead = numRows;
+                if (rowsToRead > MaxRows)
+                {
+                    rowsToRead = MaxRows;
+                    truncated = true;
+                }
+
+                var rows = new List<string[]>((int)rowsToRead);
+                for (long r = 0; r < rowsToRead; r++)
+                {
+                    var row = new string[columns.Count];
+                    for (int c = 1; c < columnsNumber; c++)
+                        row[c - 1] = getCell.Invoke(storage, new object[] { r, c }) as string;
+                    rows.Add(row);
+                }
+
+                return new GridData(columns, rows);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Falha ao ler a grid de resultados", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Lê apenas as linhas indicadas (todas as colunas de dados).
+        /// Retorna null em falha ou se a lista de linhas estiver vazia.
+        /// </summary>
+        public static GridData ReadRows(object gridControl, IEnumerable<long> rowIndexes)
+        {
+            try
+            {
+                Type gridType = gridControl.GetType();
+                object storage = gridType.GetProperty("GridStorage")?.GetValue(gridControl);
+                if (storage == null) return null;
+
+                int columnsNumber = Convert.ToInt32(gridType.GetProperty("ColumnsNumber")?.GetValue(gridControl));
+
+                MethodInfo getCell = GetCellMethod(storage);
+                if (getCell == null || columnsNumber < 2) return null;
+
+                IReadOnlyList<GridColumn> columns = ReadColumns(gridControl, gridType, storage, columnsNumber);
+
+                var rows = new List<string[]>();
+                foreach (long r in rowIndexes)
+                {
+                    var row = new string[columns.Count];
+                    for (int c = 1; c < columnsNumber; c++)
+                        row[c - 1] = getCell.Invoke(storage, new object[] { r, c }) as string;
+                    rows.Add(row);
+                }
+
+                return rows.Count == 0 ? null : new GridData(columns, rows);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Falha ao ler linhas selecionadas da grid", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Valores da coluna da primeira célula selecionada, nas linhas selecionadas,
+        /// mais o tipo CLR da coluna. Retorna null sem seleção ou em falha.
+        /// Preenche <paramref name="selection"/> com os metadados brutos para diagnóstico.
+        /// </summary>
+        public static Tuple<List<string>, Type> ReadSelectedColumnValues(object gridControl, out GridSelection selection)
+        {
+            selection = ReadSelection(gridControl);
+            if (selection == null) return null;
+
+            try
+            {
+                Type gridType = gridControl.GetType();
+                object storage = gridType.GetProperty("GridStorage")?.GetValue(gridControl);
+                MethodInfo getCell = GetCellMethod(storage);
+                if (storage == null || getCell == null) return null;
+
+                if (selection.RowIndexes.Count >= MaxRows)
+                    Log.Info($"Copy as IN clause: seleção truncada em {MaxRows} linhas.");
+
+                if (selection.FirstColumn < 0 || selection.RowIndexes.Count == 0) return null;
+
+                int column = selection.FirstColumn;
+                var values = new List<string>(selection.RowIndexes.Count);
+                foreach (long r in selection.RowIndexes)
+                    values.Add(getCell.Invoke(storage, new object[] { r, column }) as string);
+
+                Type clrType = ReadColumnClrType(storage, column);
+                return Tuple.Create(values, clrType);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Falha ao ler a seleção da grid", ex);
+                return null;
+            }
+        }
+
+        // ------------------------------------------------------------------ //
+        //  Helpers internos                                                    //
+        // ------------------------------------------------------------------ //
+
+        private static MethodInfo GetCellMethod(object storage)
+            => storage?.GetType().GetMethod("GetCellDataAsString", new[] { typeof(long), typeof(int) });
+
+        private static IReadOnlyList<GridColumn> ReadColumns(object gridControl, Type gridType, object storage, int columnsNumber)
+        {
+            DataTable schema = storage.GetType()
+                .GetField("m_schemaTable", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?.GetValue(storage) as DataTable;
+
+            MethodInfo getHeaderInfo = FindGetHeaderInfo(gridType);
+
+            var columns = new List<GridColumn>(columnsNumber - 1);
+            for (int c = 1; c < columnsNumber; c++)
+            {
+                string name = null;
+                if (getHeaderInfo != null)
+                {
+                    var args = new object[] { c, null, null };
+                    getHeaderInfo.Invoke(gridControl, args);
+                    name = args[1] as string;
+                }
+                if (string.IsNullOrEmpty(name) && schema != null && c - 1 < schema.Rows.Count)
+                    name = schema.Rows[c - 1]["ColumnName"] as string;
+
+                columns.Add(new GridColumn(name ?? ("Coluna" + c), GetSchemaClrType(schema, c)));
+            }
+            return columns;
+        }
+
+        private static Type ReadColumnClrType(object storage, int gridColumn)
+        {
+            DataTable schema = storage.GetType()
+                .GetField("m_schemaTable", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?.GetValue(storage) as DataTable;
+            return GetSchemaClrType(schema, gridColumn);
+        }
+
+        private static Type GetSchemaClrType(DataTable schema, int gridColumn)
+        {
+            if (schema == null || gridColumn - 1 >= schema.Rows.Count) return null;
+            try { return schema.Rows[gridColumn - 1]["DataType"] as Type; }
+            catch { return null; }
+        }
+
+        private static MethodInfo FindGetHeaderInfo(Type gridType)
+        {
+            foreach (MethodInfo method in gridType.GetMethods())
+            {
+                if (method.Name == "GetHeaderInfo" && method.GetParameters().Length == 3)
+                    return method;
+            }
+            return null;
+        }
+
+        // ------------------------------------------------------------------ //
+        //  Focus / grid control discovery                                      //
+        // ------------------------------------------------------------------ //
+
         public static object GetFocusedGridControl()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -87,158 +341,6 @@ namespace SqlBeaver.Grid
                 }
             }
             return focusedMatch ?? anyMatch;
-        }
-
-        /// <summary>Lê a grid inteira (até MaxRows). Retorna null em falha.</summary>
-        public static GridData ReadAll(object gridControl, out bool truncated)
-        {
-            truncated = false;
-            try
-            {
-                Type gridType = gridControl.GetType();
-                object storage = gridType.GetProperty("GridStorage")?.GetValue(gridControl);
-                if (storage == null) return null;
-
-                long numRows = Convert.ToInt64(storage.GetType().GetMethod("NumRows")?.Invoke(storage, null));
-                int columnsNumber = Convert.ToInt32(gridType.GetProperty("ColumnsNumber")?.GetValue(gridControl));
-
-                MethodInfo getCell = GetCellMethod(storage);
-                if (getCell == null || columnsNumber < 2) return null;
-
-                IReadOnlyList<GridColumn> columns = ReadColumns(gridControl, gridType, storage, columnsNumber);
-
-                long rowsToRead = numRows;
-                if (rowsToRead > MaxRows)
-                {
-                    rowsToRead = MaxRows;
-                    truncated = true;
-                }
-
-                var rows = new List<string[]>((int)rowsToRead);
-                for (long r = 0; r < rowsToRead; r++)
-                {
-                    var row = new string[columns.Count];
-                    for (int c = 1; c < columnsNumber; c++)
-                        row[c - 1] = getCell.Invoke(storage, new object[] { r, c }) as string;
-                    rows.Add(row);
-                }
-
-                return new GridData(columns, rows);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Falha ao ler a grid de resultados", ex);
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Valores da coluna da primeira célula selecionada, nas linhas selecionadas,
-        /// mais o tipo CLR da coluna. Retorna null sem seleção ou em falha.
-        /// </summary>
-        public static Tuple<List<string>, Type> ReadSelectedColumnValues(object gridControl)
-        {
-            try
-            {
-                Type gridType = gridControl.GetType();
-                object storage = gridType.GetProperty("GridStorage")?.GetValue(gridControl);
-                MethodInfo getCell = GetCellMethod(storage);
-                if (storage == null || getCell == null) return null;
-
-                var selectedCells = gridType.GetProperty("SelectedCells")?.GetValue(gridControl) as IEnumerable;
-                if (selectedCells == null) return null;
-
-                int column = -1;
-                var rowIndexes = new SortedSet<long>();
-                foreach (object block in selectedCells)
-                {
-                    Type blockType = block.GetType();
-                    int x = Convert.ToInt32(blockType.GetProperty("X")?.GetValue(block));
-                    int right = Convert.ToInt32(blockType.GetProperty("Right")?.GetValue(block));
-                    long y = Convert.ToInt64(blockType.GetProperty("Y")?.GetValue(block));
-                    long bottom = Convert.ToInt64(blockType.GetProperty("Bottom")?.GetValue(block));
-
-                    if (column < 0)
-                        column = Math.Max(1, x); // coluna 0 é a régua de números de linha
-
-                    if (x <= column && column <= right)
-                    {
-                        for (long r = y; r <= bottom && rowIndexes.Count < MaxRows; r++)
-                            rowIndexes.Add(r);
-                    }
-                }
-
-                if (rowIndexes.Count >= MaxRows)
-                    Log.Info($"Copy as IN clause: seleção truncada em {MaxRows} linhas.");
-
-                if (column < 0 || rowIndexes.Count == 0) return null;
-
-                var values = new List<string>(rowIndexes.Count);
-                foreach (long r in rowIndexes)
-                    values.Add(getCell.Invoke(storage, new object[] { r, column }) as string);
-
-                Type clrType = ReadColumnClrType(storage, column);
-                return Tuple.Create(values, clrType);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Falha ao ler a seleção da grid", ex);
-                return null;
-            }
-        }
-
-        private static MethodInfo GetCellMethod(object storage)
-            => storage?.GetType().GetMethod("GetCellDataAsString", new[] { typeof(long), typeof(int) });
-
-        private static IReadOnlyList<GridColumn> ReadColumns(object gridControl, Type gridType, object storage, int columnsNumber)
-        {
-            DataTable schema = storage.GetType()
-                .GetField("m_schemaTable", BindingFlags.NonPublic | BindingFlags.Instance)
-                ?.GetValue(storage) as DataTable;
-
-            MethodInfo getHeaderInfo = FindGetHeaderInfo(gridType);
-
-            var columns = new List<GridColumn>(columnsNumber - 1);
-            for (int c = 1; c < columnsNumber; c++)
-            {
-                string name = null;
-                if (getHeaderInfo != null)
-                {
-                    var args = new object[] { c, null, null };
-                    getHeaderInfo.Invoke(gridControl, args);
-                    name = args[1] as string;
-                }
-                if (string.IsNullOrEmpty(name) && schema != null && c - 1 < schema.Rows.Count)
-                    name = schema.Rows[c - 1]["ColumnName"] as string;
-
-                columns.Add(new GridColumn(name ?? ("Coluna" + c), GetSchemaClrType(schema, c)));
-            }
-            return columns;
-        }
-
-        private static Type ReadColumnClrType(object storage, int gridColumn)
-        {
-            DataTable schema = storage.GetType()
-                .GetField("m_schemaTable", BindingFlags.NonPublic | BindingFlags.Instance)
-                ?.GetValue(storage) as DataTable;
-            return GetSchemaClrType(schema, gridColumn);
-        }
-
-        private static Type GetSchemaClrType(DataTable schema, int gridColumn)
-        {
-            if (schema == null || gridColumn - 1 >= schema.Rows.Count) return null;
-            try { return schema.Rows[gridColumn - 1]["DataType"] as Type; }
-            catch { return null; }
-        }
-
-        private static MethodInfo FindGetHeaderInfo(Type gridType)
-        {
-            foreach (MethodInfo method in gridType.GetMethods())
-            {
-                if (method.Name == "GetHeaderInfo" && method.GetParameters().Length == 3)
-                    return method;
-            }
-            return null;
         }
     }
 }

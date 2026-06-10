@@ -83,7 +83,26 @@ namespace SqlBeaver.Grid
                     return;
                 }
 
-                GridData data = ResultsGridAccess.ReadAll(grid, out bool truncated);
+                ResultsGridAccess.GridSelection sel = ResultsGridAccess.ReadSelection(grid);
+                if (sel != null)
+                    Log.Info("Script as INSERT: blocos de seleção: " + string.Join(" | ", sel.BlockDump));
+
+                GridData data;
+                string modeMsg;
+                if (ResultsGridAccess.IsRealSelection(sel))
+                {
+                    data = ResultsGridAccess.ReadRows(grid, sel.RowIndexes);
+                    modeMsg = $"{sel.RowIndexes.Count} linha(s) selecionada(s)";
+                }
+                else
+                {
+                    data = ResultsGridAccess.ReadAll(grid, out bool truncated);
+                    int rowCount = data?.Rows.Count ?? 0;
+                    modeMsg = $"grid inteira ({rowCount} linha(s))";
+                    if (truncated)
+                        modeMsg += $" — truncada em {ResultsGridAccess.MaxRows}";
+                }
+
                 if (data == null || data.Rows.Count == 0)
                 {
                     Log.Info("Script as INSERT: grid vazia.");
@@ -93,7 +112,7 @@ namespace SqlBeaver.Grid
 
                 string tableName = TableNameHeuristic.TryExtract(GetActiveQueryText()) ?? "[NomeDaTabela]";
                 string script    = InsertScriptBuilder.Build(data, tableName);
-                if (truncated)
+                if (ResultsGridAccess.IsRealSelection(sel) && sel.RowIndexes.Count >= ResultsGridAccess.MaxRows)
                     script += "-- ATENÇÃO: resultado truncado em " + ResultsGridAccess.MaxRows + " linhas\r\n";
 
                 try
@@ -107,7 +126,7 @@ namespace SqlBeaver.Grid
                     return;
                 }
 
-                string msg = $"{data.Rows.Count} linha(s) copiada(s) (tabela: {tableName})";
+                string msg = $"{data.Rows.Count} linha(s) copiada(s) ({modeMsg}, tabela: {tableName})";
                 Log.Info("Script as INSERT: " + msg + ".");
                 ShowStatus(msg);
             }
@@ -131,16 +150,20 @@ namespace SqlBeaver.Grid
                     return;
                 }
 
-                Tuple<List<string>, Type> selection =
-                    ResultsGridAccess.ReadSelectedColumnValues(grid);
-                if (selection == null || selection.Item1.Count == 0)
+                Tuple<List<string>, Type> result =
+                    ResultsGridAccess.ReadSelectedColumnValues(grid, out ResultsGridAccess.GridSelection selection);
+
+                if (selection != null)
+                    Log.Info("Copy as IN clause: blocos de seleção: " + string.Join(" | ", selection.BlockDump));
+
+                if (result == null || result.Item1.Count == 0)
                 {
                     Log.Info("Copy as IN clause: selecione ao menos uma célula.");
                     ShowStatus("selecione ao menos uma célula");
                     return;
                 }
 
-                string inClause = InClauseBuilder.Build(selection.Item1, selection.Item2);
+                string inClause = InClauseBuilder.Build(result.Item1, result.Item2);
 
                 if (inClause == "()")
                 {
@@ -160,7 +183,7 @@ namespace SqlBeaver.Grid
                     return;
                 }
 
-                string msg = $"{selection.Item1.Count} valor(es) copiado(s)";
+                string msg = $"{result.Item1.Count} valor(es) copiado(s)";
                 Log.Info("Copy as IN clause: " + msg + ".");
                 ShowStatus(msg);
             }
@@ -184,7 +207,26 @@ namespace SqlBeaver.Grid
                     return;
                 }
 
-                GridData data = ResultsGridAccess.ReadAll(grid, out bool truncated);
+                ResultsGridAccess.GridSelection sel = ResultsGridAccess.ReadSelection(grid);
+                if (sel != null)
+                    Log.Info("Open in Excel: blocos de seleção: " + string.Join(" | ", sel.BlockDump));
+
+                GridData data;
+                string modeMsg;
+                if (ResultsGridAccess.IsRealSelection(sel))
+                {
+                    data = ResultsGridAccess.ReadRows(grid, sel.RowIndexes);
+                    modeMsg = $"{sel.RowIndexes.Count} linha(s) selecionada(s)";
+                }
+                else
+                {
+                    data = ResultsGridAccess.ReadAll(grid, out bool truncated);
+                    int rowCount = data?.Rows.Count ?? 0;
+                    modeMsg = $"grid inteira ({rowCount} linha(s))";
+                    if (truncated)
+                        Log.Info($"Open in Excel: exportação truncada em {ResultsGridAccess.MaxRows} linhas.");
+                }
+
                 if (data == null)
                 {
                     Log.Info("Open in Excel: falha ao ler a grid.");
@@ -193,8 +235,6 @@ namespace SqlBeaver.Grid
                 }
 
                 string path = ExcelExporter.ExportToTempFile(data);
-                if (truncated)
-                    Log.Info($"Open in Excel: exportação truncada em {ResultsGridAccess.MaxRows} linhas.");
 
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
@@ -202,7 +242,7 @@ namespace SqlBeaver.Grid
                     UseShellExecute = true,
                 });
 
-                string msg = $"{data.Rows.Count} linha(s) exportada(s) para Excel";
+                string msg = $"{data.Rows.Count} linha(s) exportada(s) para Excel ({modeMsg})";
                 Log.Info("Open in Excel: " + msg + " (" + path + ").");
                 ShowStatus(msg);
             }
