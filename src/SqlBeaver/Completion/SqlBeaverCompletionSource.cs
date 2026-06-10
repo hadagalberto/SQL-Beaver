@@ -54,6 +54,7 @@ namespace SqlBeaver.Completion
         private readonly MetadataCache _cache;
         private ActiveConnection _connection;
         private bool _loggedContentType;
+        private static bool _loggedFirstItems;
 
         public SqlBeaverCompletionSource(MetadataCache cache)
         {
@@ -121,7 +122,15 @@ namespace SqlBeaver.Completion
                 if (metadata == null)
                     return Task.FromResult(CompletionContext.Empty); // carga disparada em background
 
-                return Task.FromResult(new CompletionContext(BuildItems(context, metadata)));
+                ImmutableArray<CompletionItem> items = BuildItems(context, metadata);
+
+                if (!_loggedFirstItems)
+                {
+                    _loggedFirstItems = true;
+                    Log.Info($"Completion: contexto={context.Kind}, parcial='{context.Partial}', {items.Length} item(ns), db={connection.Database}.");
+                }
+
+                return Task.FromResult(new CompletionContext(items));
             }
             catch (Exception ex)
             {

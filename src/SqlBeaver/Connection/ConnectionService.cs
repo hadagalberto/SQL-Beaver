@@ -80,12 +80,20 @@ namespace SqlBeaver.Connection
 
             if (LooksLikeEntra(userName, password, authenticationType))
             {
-                string accessToken = GetLiveConnectionAccessToken();
-                if (string.IsNullOrEmpty(accessToken))
+                LiveConnectionInfo live = GetLiveConnectionInfo();
+                if (live == null || string.IsNullOrEmpty(live.AccessToken))
                 {
                     LogEntraWithoutTokenOnce();
                     return null; // degrada em silêncio: melhor sem sugestões que spam de erro 40607
                 }
+
+                // A conexão viva é a fonte da verdade: AdvancedOptions["DATABASE"] pode estar
+                // dessincronizado da janela (ou ausente → "master"), enquanto live.Database
+                // reflete o banco efetivo da sessão.
+                if (!string.IsNullOrEmpty(live.Database))
+                    database = live.Database;
+                if (!string.IsNullOrEmpty(live.DataSource))
+                    server = live.DataSource;
 
                 var tokenBuilder = new SqlConnectionStringBuilder
                 {
@@ -97,12 +105,18 @@ namespace SqlBeaver.Connection
                     // sem Integrated Security / User ID / Password: incompatíveis com AccessToken
                 };
 
+                if (!_loggedEntraResolved)
+                {
+                    _loggedEntraResolved = true;
+                    Log.Info($"Conexão Entra resolvida: servidor={server}, database={database} (via conexão viva: db={live.Database ?? "-"}).");
+                }
+
                 return new ActiveConnection
                 {
                     Server = server,
                     Database = database,
                     ConnectionString = tokenBuilder.ConnectionString,
-                    AccessToken = accessToken,
+                    AccessToken = live.AccessToken,
                 };
             }
 
@@ -210,30 +224,14 @@ namespace SqlBeaver.Connection
             Log.Error(message + " (a extensão seguirá sem sugestões)", ex);
         }
 
-        private static bool _loggedEntraWithoutToken;
-
-        // UPN sem senha (Entra MFA) ou dica explícita no tipo de autenticação.
-        private static bool LooksLikeEntra(string userName, string password, string authenticationType)
+        private sealed class LiveConnectionInfo
         {
-            if (!string.IsNullOrEmpty(authenticationType))
-            {
-                string[] hints = { "active directory", "activedirectory", "entra", "azure", "mfa", "universal", "interactive" };
-                foreach (string hint in hints)
-                {
-                    if (authenticationType.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
-                        return true;
-                }
-            }
-
-            return string.IsNullOrEmpty(password) &&
-                   !string.IsNullOrEmpty(userName) &&
-                   userName.IndexOf('@') >= 0 &&
-                   userName.IndexOf('\\') < 0;
+            public string AccessToken;
+            public string Database;
+            public string DataSource;
         }
 
-        // Caminho SSMS 21/22: ISqlEditorService.GetCurrentConnection() devolve a conexão
-        // viva (já autenticada) do editor ativo; o AccessToken dela é reutilizável.
-        private static string GetLiveConnectionAccessToken()
+        private static LiveConnectionInfo GetLiveConnectionInfo()
         {
             try
             {
@@ -255,12 +253,39 @@ namespace SqlBeaver.Connection
                 if (liveConnection == null)
                     return null;
 
-                return GetProperty(liveConnection, "AccessToken") as string;
+                return new LiveConnectionInfo
+                {
+                    AccessToken = GetProperty(liveConnection, "AccessToken") as string,
+                    Database = GetProperty(liveConnection, "Database") as string,
+                    DataSource = GetProperty(liveConnection, "DataSource") as string,
+                };
             }
             catch
             {
                 return null;
             }
+        }
+
+        private static bool _loggedEntraWithoutToken;
+        private static bool _loggedEntraResolved;
+
+        // UPN sem senha (Entra MFA) ou dica explícita no tipo de autenticação.
+        private static bool LooksLikeEntra(string userName, string password, string authenticationType)
+        {
+            if (!string.IsNullOrEmpty(authenticationType))
+            {
+                string[] hints = { "active directory", "activedirectory", "entra", "azure", "mfa", "universal", "interactive" };
+                foreach (string hint in hints)
+                {
+                    if (authenticationType.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+
+            return string.IsNullOrEmpty(password) &&
+                   !string.IsNullOrEmpty(userName) &&
+                   userName.IndexOf('@') >= 0 &&
+                   userName.IndexOf('\\') < 0;
         }
 
         private static object TryGetGlobalService(Type serviceType)

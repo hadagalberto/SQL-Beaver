@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Threading;
 using System.Threading.Tasks;
+using SqlBeaver.Diagnostics;
 
 namespace SqlBeaver.Metadata
 {
@@ -19,12 +20,18 @@ namespace SqlBeaver.Metadata
             var schemas = new List<string>();
             var tables = new List<TableEntry>();
 
+            string dataSource;
+            string database;
+
             using (var connection = new SqlConnection(connectionString))
             {
                 if (!string.IsNullOrEmpty(accessToken))
                     connection.AccessToken = accessToken;
 
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+                dataSource = connection.DataSource;
+                database = connection.Database;
 
                 using (SqlCommand command = connection.CreateCommand())
                 {
@@ -52,6 +59,9 @@ ORDER BY name;";
                     }
                 }
             }
+
+            Log.Info(
+                $"Metadata carregada: {schemas.Count} schema(s), {tables.Count} tabela(s) de [{dataSource}].[{database}].");
 
             return new DbMetadata(schemas, tables);
         }
