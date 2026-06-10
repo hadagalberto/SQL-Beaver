@@ -73,6 +73,15 @@ namespace SqlBeaver.Completion
                              triggerLocation.Snapshot.ContentType.TypeName);
                 }
 
+                // Early-out barato: tecla que não inicia/estende identificador, ponto ou
+                // espaço (popup pós-FROM) não justifica varrer o buffer.
+                if (trigger.Reason == CompletionTriggerReason.Insertion)
+                {
+                    char typed = trigger.Character;
+                    if (!char.IsLetterOrDigit(typed) && typed != '_' && typed != '.' && !char.IsWhiteSpace(typed))
+                        return CompletionStartData.DoesNotParticipateInCompletion;
+                }
+
                 SqlContext context = AnalyzeAt(triggerLocation);
                 if (context.Kind == SqlContextKind.None)
                     return CompletionStartData.DoesNotParticipateInCompletion;

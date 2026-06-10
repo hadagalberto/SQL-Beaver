@@ -22,6 +22,11 @@ namespace SqlBeaver.Connection
     {
         private static bool _loggedFailure;
 
+        // Cache apenas de acertos: assemblies do SSMS carregam tarde, um miss agora
+        // pode virar acerto depois.
+        private static Type _serviceCacheType;
+        private static PropertyInfo _scriptFactoryProperty;
+
         public static ActiveConnection GetActiveConnection()
         {
             try
@@ -37,16 +42,21 @@ namespace SqlBeaver.Connection
 
         private static ActiveConnection GetViaScriptFactory()
         {
-            Type serviceCacheType = FindLoadedType("Microsoft.SqlServer.Management.UI.VSIntegration.ServiceCache");
+            Type serviceCacheType = _serviceCacheType
+                ?? FindLoadedType("Microsoft.SqlServer.Management.UI.VSIntegration.ServiceCache");
             if (serviceCacheType == null)
             {
                 LogFailureOnce("Tipo ServiceCache não encontrado nos assemblies carregados", null);
                 return null;
             }
+            _serviceCacheType = serviceCacheType;
 
-            object scriptFactory = serviceCacheType
-                .GetProperty("ScriptFactory", BindingFlags.Public | BindingFlags.Static)
-                ?.GetValue(null);
+            PropertyInfo scriptFactoryProperty = _scriptFactoryProperty
+                ?? serviceCacheType.GetProperty("ScriptFactory", BindingFlags.Public | BindingFlags.Static);
+            if (scriptFactoryProperty != null)
+                _scriptFactoryProperty = scriptFactoryProperty;
+
+            object scriptFactory = scriptFactoryProperty?.GetValue(null);
             object connectionWrapper = GetProperty(scriptFactory, "CurrentlyActiveWndConnectionInfo");
             object uiConnectionInfo = GetProperty(connectionWrapper, "UIConnectionInfo");
             if (uiConnectionInfo == null)
