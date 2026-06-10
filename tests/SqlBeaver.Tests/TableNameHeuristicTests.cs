@@ -22,5 +22,21 @@ namespace SqlBeaver.Tests
         {
             Assert.Null(TableNameHeuristic.TryExtract(null));
         }
+
+        [Fact]
+        public void LineComment_WithBlockCommentInside_DoesNotEatNextLine()
+        {
+            // "-- nota /*" must NOT start a block comment that eats "SELECT * FROM Real"
+            Assert.Equal("Real", TableNameHeuristic.TryExtract("-- nota /*\r\nSELECT * FROM Real"));
+        }
+
+        [Fact]
+        public void SubqueryInnerFrom_ReturnsInnerTableName()
+        {
+            // Characterizes current behavior: the regex finds the first FROM,
+            // which is the outer one; the inner table dbo.X is not returned.
+            // If behavior changes this test will catch it.
+            Assert.Equal("dbo.X", TableNameHeuristic.TryExtract("SELECT * FROM (SELECT a FROM dbo.X) t"));
+        }
     }
 }

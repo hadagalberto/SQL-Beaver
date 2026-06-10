@@ -119,6 +119,9 @@ namespace SqlBeaver.Grid
                     }
                 }
 
+                if (rowIndexes.Count >= MaxRows)
+                    Log.Info($"Copy as IN clause: seleção truncada em {MaxRows} linhas.");
+
                 if (column < 0 || rowIndexes.Count == 0) return null;
 
                 var values = new List<string>(rowIndexes.Count);

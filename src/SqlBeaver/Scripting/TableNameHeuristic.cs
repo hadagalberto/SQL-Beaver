@@ -16,10 +16,6 @@ namespace SqlBeaver.Scripting
             @"((?:\[[^\]]+\]|[A-Za-z_]\w*)(?:\s*\.\s*(?:\[[^\]]+\]|[A-Za-z_]\w*)){0,2})",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        // Detects if the character right after the matched table name starts a subquery
-        private static readonly Regex SubqueryStart = new Regex(
-            @"^\s*\(", RegexOptions.Compiled);
-
         public static string TryExtract(string query)
         {
             if (query == null)
@@ -31,16 +27,9 @@ namespace SqlBeaver.Scripting
             if (!match.Success)
                 return null;
 
-            // Check for subquery: if FROM is followed by '(' instead of a table name.
-            // The regex above won't match '(' as a table name, so this is fine as-is.
-            // But we also need to check that the char right after FROM isn't '('
-            // which would mean FROM (subquery). Since our regex requires the table to
-            // start with '[' or a letter, '(' won't be captured — so no extra check needed.
-
             // Collapse any internal whitespace (e.g. "dbo . Pessoas" → "dbo.Pessoas")
             // and return the reference exactly as written (preserving brackets).
             string tableRef = match.Groups[1].Value;
-            // Collapse whitespace around dots
             tableRef = Regex.Replace(tableRef, @"\s*\.\s*", ".");
 
             return tableRef;
@@ -48,11 +37,12 @@ namespace SqlBeaver.Scripting
 
         private static string StripComments(string sql)
         {
+            // Strip line comments first: -- to EOL. Must happen before block-comment strip
+            // so that a /* inside a -- comment (e.g. "-- note /*") does not eat subsequent lines.
+            sql = Regex.Replace(sql, @"--[^\r\n]*", " ");
+
             // Strip block comments /* ... */ (non-greedy; handle unclosed by going to end)
             sql = Regex.Replace(sql, @"/\*.*?(\*/|$)", " ", RegexOptions.Singleline);
-
-            // Strip line comments -- ... to end of line
-            sql = Regex.Replace(sql, @"--[^\r\n]*", " ");
 
             return sql;
         }

@@ -67,9 +67,9 @@ namespace SqlBeaver.Grid
                 return TextCell(string.Empty);
 
             // números como número de verdade (CPF/CNPJ são varchar → continuam texto e preservam zeros)
-            if (IsNumeric(clrType))
+            if (SqlNumberNormalizer.IsNumericClrType(clrType))
             {
-                string normalized = NormalizeNumber(display);
+                string normalized = SqlNumberNormalizer.TryNormalize(display);
                 if (normalized != null)
                 {
                     return new DocumentFormat.OpenXml.Spreadsheet.Cell
@@ -93,20 +93,5 @@ namespace SqlBeaver.Grid
                         Space = DocumentFormat.OpenXml.SpaceProcessingModeValues.Preserve,
                     }),
             };
-
-        private static bool IsNumeric(Type type)
-            => type == typeof(int) || type == typeof(long) || type == typeof(short) ||
-               type == typeof(byte) || type == typeof(decimal) || type == typeof(double) ||
-               type == typeof(float);
-
-        private static string NormalizeNumber(string display)
-        {
-            if (decimal.TryParse(display, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal invariant) &&
-                display.IndexOf(',') < 0)
-                return invariant.ToString(CultureInfo.InvariantCulture);
-            if (decimal.TryParse(display, NumberStyles.Any, CultureInfo.GetCultureInfo("pt-BR"), out decimal ptBr))
-                return ptBr.ToString(CultureInfo.InvariantCulture);
-            return null;
-        }
     }
 }

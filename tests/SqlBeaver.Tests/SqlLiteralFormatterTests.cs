@@ -25,6 +25,19 @@ namespace SqlBeaver.Tests
             Assert.Equal(expected, SqlLiteralFormatter.Format(display, type));
         }
 
+        [Theory]
+        // pt-BR thousand separator + comma decimal → unquoted invariant
+        [InlineData("1.234,56", typeof(decimal), "1234.56")]
+        // scientific notation from float/real columns → normalized via double round-trip "R"
+        // On .NET 4.8 double.Parse("1E-08").ToString("R", Invariant) == "0.00000001"
+        [InlineData("1E-08", typeof(double), "0.00000001")]
+        // string column with comma-containing value must NEVER be treated as numeric
+        [InlineData("3,14", typeof(string), "N'3,14'")]
+        public void Numerics_EdgeCases(string display, Type type, string expected)
+        {
+            Assert.Equal(expected, SqlLiteralFormatter.Format(display, type));
+        }
+
         [Fact]
         public void Numeric_ThatDoesNotParse_FallsBackToQuotedString()
         {

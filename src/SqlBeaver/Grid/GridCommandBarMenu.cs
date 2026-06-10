@@ -65,28 +65,56 @@ namespace SqlBeaver.Grid
             return button;
         }
 
+        private static void ShowStatus(string message)
+        {
+            _ = Community.VisualStudio.Toolkit.VS.StatusBar.ShowMessageAsync("SQL Beaver: " + message);
+        }
+
         private static void OnScriptAsInsert(CommandBarButton ctrl, ref bool cancelDefault)
         {
             try
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
                 object grid = ResultsGridAccess.GetFocusedGridControl();
-                if (grid == null) { Log.Info("Script as INSERT: nenhuma grid em foco."); return; }
+                if (grid == null)
+                {
+                    Log.Info("Script as INSERT: nenhuma grid em foco.");
+                    ShowStatus("nenhuma grid em foco");
+                    return;
+                }
 
                 GridData data = ResultsGridAccess.ReadAll(grid, out bool truncated);
-                if (data == null || data.Rows.Count == 0) { Log.Info("Script as INSERT: grid vazia."); return; }
+                if (data == null || data.Rows.Count == 0)
+                {
+                    Log.Info("Script as INSERT: grid vazia.");
+                    ShowStatus("grid vazia");
+                    return;
+                }
 
                 string tableName = TableNameHeuristic.TryExtract(GetActiveQueryText()) ?? "[NomeDaTabela]";
                 string script    = InsertScriptBuilder.Build(data, tableName);
                 if (truncated)
                     script += "-- ATENÇÃO: resultado truncado em " + ResultsGridAccess.MaxRows + " linhas\r\n";
 
-                Clipboard.SetText(script);
-                Log.Info($"Script as INSERT: {data.Rows.Count} linha(s) copiada(s) para o clipboard (tabela: {tableName}).");
+                try
+                {
+                    Clipboard.SetText(script);
+                }
+                catch (Exception clipEx)
+                {
+                    Log.Error("Script as INSERT: clipboard inacessível", clipEx);
+                    ShowStatus("não foi possível acessar o clipboard (em uso por outro app)");
+                    return;
+                }
+
+                string msg = $"{data.Rows.Count} linha(s) copiada(s) (tabela: {tableName})";
+                Log.Info("Script as INSERT: " + msg + ".");
+                ShowStatus(msg);
             }
             catch (Exception ex)
             {
                 Log.Error("Script as INSERT", ex);
+                ShowStatus("falha em Script as INSERT — veja Output > SQL Beaver");
             }
         }
 
@@ -96,23 +124,50 @@ namespace SqlBeaver.Grid
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
                 object grid = ResultsGridAccess.GetFocusedGridControl();
-                if (grid == null) { Log.Info("Copy as IN clause: nenhuma grid em foco."); return; }
+                if (grid == null)
+                {
+                    Log.Info("Copy as IN clause: nenhuma grid em foco.");
+                    ShowStatus("nenhuma grid em foco");
+                    return;
+                }
 
                 Tuple<List<string>, Type> selection =
                     ResultsGridAccess.ReadSelectedColumnValues(grid);
                 if (selection == null || selection.Item1.Count == 0)
                 {
                     Log.Info("Copy as IN clause: selecione ao menos uma célula.");
+                    ShowStatus("selecione ao menos uma célula");
                     return;
                 }
 
                 string inClause = InClauseBuilder.Build(selection.Item1, selection.Item2);
-                Clipboard.SetText(inClause);
-                Log.Info($"Copy as IN clause: {selection.Item1.Count} valor(es) copiado(s).");
+
+                if (inClause == "()")
+                {
+                    Log.Info("Copy as IN clause: seleção só contém NULL — nada copiado.");
+                    ShowStatus("seleção só contém NULL — nada copiado");
+                    return;
+                }
+
+                try
+                {
+                    Clipboard.SetText(inClause);
+                }
+                catch (Exception clipEx)
+                {
+                    Log.Error("Copy as IN clause: clipboard inacessível", clipEx);
+                    ShowStatus("não foi possível acessar o clipboard (em uso por outro app)");
+                    return;
+                }
+
+                string msg = $"{selection.Item1.Count} valor(es) copiado(s)";
+                Log.Info("Copy as IN clause: " + msg + ".");
+                ShowStatus(msg);
             }
             catch (Exception ex)
             {
                 Log.Error("Copy as IN clause", ex);
+                ShowStatus("falha em Copy as IN clause — veja Output > SQL Beaver");
             }
         }
 
@@ -122,10 +177,20 @@ namespace SqlBeaver.Grid
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
                 object grid = ResultsGridAccess.GetFocusedGridControl();
-                if (grid == null) { Log.Info("Open in Excel: nenhuma grid em foco."); return; }
+                if (grid == null)
+                {
+                    Log.Info("Open in Excel: nenhuma grid em foco.");
+                    ShowStatus("nenhuma grid em foco");
+                    return;
+                }
 
                 GridData data = ResultsGridAccess.ReadAll(grid, out bool truncated);
-                if (data == null) { Log.Info("Open in Excel: falha ao ler a grid."); return; }
+                if (data == null)
+                {
+                    Log.Info("Open in Excel: falha ao ler a grid.");
+                    ShowStatus("falha ao ler a grid");
+                    return;
+                }
 
                 string path = ExcelExporter.ExportToTempFile(data);
                 if (truncated)
@@ -136,11 +201,15 @@ namespace SqlBeaver.Grid
                     FileName = path,
                     UseShellExecute = true,
                 });
-                Log.Info($"Open in Excel: {data.Rows.Count} linha(s) exportada(s) para {path}.");
+
+                string msg = $"{data.Rows.Count} linha(s) exportada(s) para Excel";
+                Log.Info("Open in Excel: " + msg + " (" + path + ").");
+                ShowStatus(msg);
             }
             catch (Exception ex)
             {
                 Log.Error("Open in Excel", ex);
+                ShowStatus("falha em Open in Excel — veja Output > SQL Beaver");
             }
         }
 
