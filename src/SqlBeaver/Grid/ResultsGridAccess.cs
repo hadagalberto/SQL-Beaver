@@ -33,11 +33,60 @@ namespace SqlBeaver.Grid
             if (!(frameObj is IVsWindowFrame frame)) return null;
 
             frame.GetProperty((int)__VSFPROPID.VSFPROPID_DocView, out object docView);
-            var container = docView as ContainerControl;
-            var inner = container?.ActiveControl as ContainerControl;
-            Control candidate = inner?.ActiveControl;
+            Control current = docView as Control;
+            var walked = new List<string>();
 
-            return candidate != null && candidate.GetType().Name == "GridControl" ? candidate : null;
+            // segue a cadeia de foco (ActiveControl); a grid do SSMS é uma SUBCLASSE
+            // de GridControl, então a checagem percorre a hierarquia de tipos
+            for (int depth = 0; current != null && depth < 10; depth++)
+            {
+                walked.Add(current.GetType().Name);
+                if (IsGridControl(current))
+                    return current;
+                current = (current as ContainerControl)?.ActiveControl;
+            }
+
+            // fallback: busca em profundidade na árvore de controles a partir do DocView
+            Control fallback = FindVisibleGrid(docView as Control, 0);
+            if (fallback != null)
+                return fallback;
+
+            if (!_loggedFocusWalk)
+            {
+                _loggedFocusWalk = true;
+                Log.Info("Grid não encontrada na cadeia de foco nem na busca em profundidade: " +
+                         (walked.Count == 0 ? "(DocView não é Control WinForms)" : string.Join(" > ", walked)) + ".");
+            }
+            return null;
+        }
+
+        private static bool _loggedFocusWalk;
+
+        private static bool IsGridControl(Control control)
+        {
+            for (Type type = control.GetType(); type != null; type = type.BaseType)
+            {
+                if (type.Name == "GridControl")
+                    return true;
+            }
+            return false;
+        }
+
+        private static Control FindVisibleGrid(Control root, int depth)
+        {
+            if (root == null || depth > 12) return null;
+            if (IsGridControl(root) && root.Visible) return root;
+            Control focusedMatch = null, anyMatch = null;
+            foreach (Control child in root.Controls)
+            {
+                Control found = FindVisibleGrid(child, depth + 1);
+                if (found != null)
+                {
+                    if (found.ContainsFocus) { focusedMatch = found; break; }
+                    if (anyMatch == null) anyMatch = found;
+                }
+            }
+            return focusedMatch ?? anyMatch;
         }
 
         /// <summary>Lê a grid inteira (até MaxRows). Retorna null em falha.</summary>
