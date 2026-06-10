@@ -42,6 +42,8 @@ namespace SqlBeaver.Tests
         [InlineData("'select ")]     // dentro de string
         [InlineData(" ")]            // sem palavra
         [InlineData("x ")]           // identificador qualquer
+        [InlineData("from sets")]    // Enter consumido por commit: texto não termina em separador
+        [InlineData("select")]       // idem: palavra crua sem separador
         public void NotApplicable_ReturnsFalse(string text)
         {
             Assert.False(Fix(text).ok);

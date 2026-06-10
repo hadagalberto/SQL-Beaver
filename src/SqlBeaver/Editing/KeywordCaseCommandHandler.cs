@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.Composition;
 using Microsoft.VisualStudio.Commanding;
+using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Text.Editor.Commanding.Commands;
@@ -16,6 +17,7 @@ namespace SqlBeaver.Editing
     /// </summary>
     [Export(typeof(ICommandHandler))]
     [Name("SQL Beaver keyword case")]
+    [Order(After = PredefinedCompletionNames.CompletionCommandHandler)]
     [ContentType("SQL Server Tools")]
     [ContentType("SQL")]
     [TextViewRole(PredefinedTextViewRoles.Editable)]

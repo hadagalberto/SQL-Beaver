@@ -34,6 +34,15 @@ namespace SqlBeaver.Analysis
             if (text == null || text.Length < 2)
                 return false;
 
+            // Contrato autodefensivo: o último char precisa ser o separador recém-digitado.
+            // (O Enter pode ser consumido por outro handler — ex.: commit de completion —
+            // e aí o texto termina em identificador; agir nesse caso corromperia o texto.)
+            char separator = text[text.Length - 1];
+            if (!char.IsWhiteSpace(separator) &&
+                separator != '(' && separator != ')' && separator != ',' &&
+                separator != ';' && separator != '=')
+                return false;
+
             // pula whitespace entre a palavra e o separador (cobre CRLF do Enter)
             int i = text.Length - 2;
             while (i >= 0 && (text[i] == ' ' || text[i] == '\t' || text[i] == '\r' || text[i] == '\n'))
