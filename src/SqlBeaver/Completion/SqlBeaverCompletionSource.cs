@@ -132,7 +132,7 @@ namespace SqlBeaver.Completion
 
         public Task<object> GetDescriptionAsync(
             IAsyncCompletionSession session, CompletionItem item, CancellationToken token)
-            => Task.FromResult<object>(item.DisplayText);
+            => Task.FromResult<object>(item.InsertText);
 
         private ImmutableArray<CompletionItem> BuildItems(SqlContext context, DbMetadata metadata)
         {
@@ -156,14 +156,14 @@ namespace SqlBeaver.Completion
             {
                 string qualified = BracketIfNeeded(table.Schema) + "." + BracketIfNeeded(table.Name);
                 items.Add(new CompletionItem(
-                    displayText: qualified,
+                    displayText: table.Name,   // nome simples: é o que o usuário digita
                     source: this,
                     icon: TableIcon,
                     filters: ImmutableArray<CompletionFilter>.Empty,
-                    suffix: string.Empty,
-                    insertText: qualified,
-                    sortText: qualified,
-                    filterText: table.Name + " " + qualified, // digitar "Ped" encontra "dbo.Pedidos"
+                    suffix: table.Schema,      // schema visível à direita, estilo nativo
+                    insertText: qualified,     // inserção continua qualificada
+                    sortText: table.Name + " " + qualified,
+                    filterText: table.Name,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
             }
 
