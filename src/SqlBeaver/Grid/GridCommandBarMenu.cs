@@ -22,6 +22,7 @@ namespace SqlBeaver.Grid
         // Referências fortes: os handlers COM são coletados pelo GC sem isso.
         private static CommandBarButton _scriptAsInsertButton;
         private static CommandBarButton _copyAsInButton;
+        private static CommandBarButton _openInExcelButton;
 
         public static void Initialize()
         {
@@ -40,6 +41,7 @@ namespace SqlBeaver.Grid
 
                 _scriptAsInsertButton = AddButton(gridBar, "Script as INSERT", OnScriptAsInsert, beginGroup: true);
                 _copyAsInButton       = AddButton(gridBar, "Copy as IN clause", OnCopyAsInClause, beginGroup: false);
+                _openInExcelButton    = AddButton(gridBar, "Open in Excel", OnOpenInExcel, beginGroup: false);
 
                 Log.Info("Comandos registrados no menu da grid de resultados.");
             }
@@ -111,6 +113,34 @@ namespace SqlBeaver.Grid
             catch (Exception ex)
             {
                 Log.Error("Copy as IN clause", ex);
+            }
+        }
+
+        private static void OnOpenInExcel(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                object grid = ResultsGridAccess.GetFocusedGridControl();
+                if (grid == null) { Log.Info("Open in Excel: nenhuma grid em foco."); return; }
+
+                GridData data = ResultsGridAccess.ReadAll(grid, out bool truncated);
+                if (data == null) { Log.Info("Open in Excel: falha ao ler a grid."); return; }
+
+                string path = ExcelExporter.ExportToTempFile(data);
+                if (truncated)
+                    Log.Info($"Open in Excel: exportação truncada em {ResultsGridAccess.MaxRows} linhas.");
+
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = path,
+                    UseShellExecute = true,
+                });
+                Log.Info($"Open in Excel: {data.Rows.Count} linha(s) exportada(s) para {path}.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Open in Excel", ex);
             }
         }
 
