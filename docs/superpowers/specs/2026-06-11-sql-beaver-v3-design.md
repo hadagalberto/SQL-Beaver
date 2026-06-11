@@ -112,7 +112,7 @@ pendências consolidadas na última seção e reportadas ao usuário na entrega.
 
 ## Pendências consolidadas (reportar ao usuário na entrega)
 
-1. ~~Pintar a ABA literal~~ RESOLVIDO pós-entrega: TabColorizer pinta a aba via árvore visual (técnica AxialSqlTools, comprovada no SSMS 21/22) — sem API pública, pode exigir ajuste em updates do SSMS; a faixa colorida permanece como fallback. Abas só ganham cor após a primeira ativação da janela.
+1. ~~Pintar a ABA literal~~ RESOLVIDO pós-entrega: TabColorizer pinta a aba via árvore visual (técnica AxialSqlTools, comprovada no SSMS 21/22) — sem API pública, pode exigir ajuste em updates do SSMS; a faixa colorida permanece como fallback. Abas só ganham cor após a primeira ativação da janela. Edição visual das regras entregue (EnvironmentsDialog) com recarga ao vivo.
 2. "Grupo de servidores" via grupos registrados do SSMS (SMO RegisteredServersStore) — coberto por
    globs de servidor; integração com grupos fica para depois se necessário.
 3. Rename de OBJETO no banco (sp_rename + atualização de referências) — risco alto, não incluído;

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using SqlBeaver.Environments;
 using Xunit;
 
@@ -144,6 +145,59 @@ namespace SqlBeaver.Tests
         {
             EnvironmentRule result = EnvironmentClassifier.Match(new List<EnvironmentRule>(), "server", "db");
             Assert.Null(result);
+        }
+
+        // ── EnvironmentClassifier.Serialize ─────────────────────────────────
+
+        [Fact]
+        public void Serialize_ThenLoad_RoundTrip_PreservesAllFields()
+        {
+            var original = new List<EnvironmentRule>
+            {
+                new EnvironmentRule
+                {
+                    Name           = "Produção",
+                    Color          = "#C42B1C",
+                    Servers        = new[] { "*prd*", "*prod*" },
+                    Databases      = new[] { "*" },
+                    ConfirmExecute = true,
+                },
+                new EnvironmentRule
+                {
+                    Name           = "Desenvolvimento",
+                    Color          = "#0E700E",
+                    Servers        = new[] { "localhost", "*dev*" },
+                    Databases      = new[] { "mydb", "testdb" },
+                    ConfirmExecute = false,
+                },
+            };
+
+            string json = EnvironmentClassifier.Serialize(original);
+            IReadOnlyList<EnvironmentRule> loaded = EnvironmentClassifier.Load(json);
+
+            Assert.Equal(2, loaded.Count);
+
+            // First rule
+            Assert.Equal("Produção",  loaded[0].Name);
+            Assert.Equal("#C42B1C",   loaded[0].Color);
+            Assert.Equal(new[] { "*prd*", "*prod*" }, loaded[0].Servers);
+            Assert.Equal(new[] { "*" }, loaded[0].Databases);
+            Assert.True(loaded[0].ConfirmExecute);
+
+            // Second rule — order preserved
+            Assert.Equal("Desenvolvimento", loaded[1].Name);
+            Assert.Equal("#0E700E",          loaded[1].Color);
+            Assert.Equal(new[] { "localhost", "*dev*" }, loaded[1].Servers);
+            Assert.Equal(new[] { "mydb", "testdb" },     loaded[1].Databases);
+            Assert.False(loaded[1].ConfirmExecute);
+        }
+
+        [Fact]
+        public void Serialize_EmptyList_RoundTrips()
+        {
+            string json = EnvironmentClassifier.Serialize(new List<EnvironmentRule>());
+            IReadOnlyList<EnvironmentRule> loaded = EnvironmentClassifier.Load(json);
+            Assert.Empty(loaded);
         }
     }
 }

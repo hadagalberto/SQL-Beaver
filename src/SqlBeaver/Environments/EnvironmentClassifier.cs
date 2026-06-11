@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.Serialization.Json;
 using System.Text;
 
@@ -12,6 +13,25 @@ namespace SqlBeaver.Environments
     /// </summary>
     public static class EnvironmentClassifier
     {
+        /// <summary>
+        /// Serializa as regras para o formato environments.json
+        /// ({"environments":[...]}). Usa DataContractJsonSerializer,
+        /// padrão do SessionIndex.Serialize.
+        /// </summary>
+        public static string Serialize(IReadOnlyList<EnvironmentRule> rules)
+        {
+            var file = new EnvironmentFile
+            {
+                Environments = rules?.ToArray() ?? Array.Empty<EnvironmentRule>()
+            };
+            var serializer = new DataContractJsonSerializer(typeof(EnvironmentFile));
+            using (var ms = new MemoryStream())
+            {
+                serializer.WriteObject(ms, file);
+                return Encoding.UTF8.GetString(ms.ToArray());
+            }
+        }
+
         /// <summary>
         /// Carrega as regras do JSON (DataContractJsonSerializer).
         /// JSON inválido ou nulo retorna lista vazia — nunca lança.

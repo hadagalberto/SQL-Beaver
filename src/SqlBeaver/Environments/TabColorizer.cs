@@ -28,6 +28,9 @@ namespace SqlBeaver.Environments
             new Dictionary<string, Color?>(StringComparer.OrdinalIgnoreCase);
         private static bool _loggedWalkFailure;
 
+        // Retido para uso em RefreshAfterRulesChanged (chamado fora da inicialização)
+        private static DTE2 _dte;
+
         public static void Initialize()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -35,6 +38,7 @@ namespace SqlBeaver.Environments
             {
                 var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
                 if (dte == null) { Log.Info("TabColorizer: DTE indisponível."); return; }
+                _dte = dte;
 
                 _windowEvents = dte.Events.WindowEvents;
                 _windowEvents.WindowActivated += (gotFocus, lostFocus) => { LearnActiveWindow(dte); ScheduleReapply(); };
@@ -140,6 +144,27 @@ namespace SqlBeaver.Environments
                     _loggedWalkFailure = true;
                     Log.Error("TabColorizer: falha ao varrer/pintar a árvore visual (abas sem cor)", ex);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Limpa o cache de cores, reclassifica a janela ativa com as novas regras
+        /// e agenda a reaplicação a todas as abas. Deve ser chamado na UI thread
+        /// após gravar as novas regras em EnvironmentStore.
+        /// </summary>
+        internal static void RefreshAfterRulesChanged()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                _colorsByCaption.Clear();
+                if (_dte != null)
+                    LearnActiveWindow(_dte);
+                ScheduleReapply();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("TabColorizer.RefreshAfterRulesChanged", ex);
             }
         }
 

@@ -27,6 +27,7 @@ namespace SqlBeaver.Grid
         private static CommandBarButton _findReferencesButton;
         private static CommandBarButton _queryHistoryButton;
         private static CommandBarButton _recoverSessionButton;
+        private static CommandBarButton _environmentsButton;
 
         // Refactor submenu
         private static CommandBarPopup _refactorPopup;
@@ -57,6 +58,7 @@ namespace SqlBeaver.Grid
                 _findReferencesButton = AddButton(editorBar, "SQL Beaver: Localizar referências", OnFindReferences, beginGroup: false);
                 _queryHistoryButton   = AddButton(editorBar, "SQL Beaver: Histórico de consultas", OnQueryHistory,   beginGroup: true);
                 _recoverSessionButton = AddButton(editorBar, "SQL Beaver: Recuperar consultas…",   OnRecoverSession, beginGroup: false);
+                _environmentsButton   = AddButton(editorBar, "SQL Beaver: Ambientes (cores)…",     OnEnvironments,   beginGroup: false);
 
                 // Refactor submenu
                 _refactorPopup = (CommandBarPopup)editorBar.Controls.Add(
@@ -234,6 +236,12 @@ namespace SqlBeaver.Grid
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             Commands.EditorCommands.RecoverSession();
+        }
+
+        private static void OnEnvironments(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Commands.EditorCommands.Environments();
         }
     }
 }

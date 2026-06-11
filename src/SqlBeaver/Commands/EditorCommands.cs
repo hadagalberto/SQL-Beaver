@@ -3,6 +3,7 @@ using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using SqlBeaver.Diagnostics;
+using SqlBeaver.Environments;
 using SqlBeaver.Navigation;
 using SqlBeaver.Session;
 
@@ -167,6 +168,20 @@ namespace SqlBeaver.Commands
             {
                 Log.Error("Recuperar consultas", ex);
                 ShowStatus("falha em Recuperar consultas — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void Environments()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                EnvironmentsDialog.Show();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ambientes (cores)", ex);
+                ShowStatus("falha ao abrir editor de ambientes — veja Output > SQL Beaver");
             }
         }
     }

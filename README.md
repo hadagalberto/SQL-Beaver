@@ -30,8 +30,12 @@ própria janela de query.
 - Faixa colorida no topo do editor identifica o ambiente da conexão ativa
   (Produção, Homologação, Desenvolvimento) com nome, servidor e banco.
 - a própria ABA também é pintada (técnica de árvore visual, sem API pública — se um update do SSMS quebrar, a faixa colorida continua), aba ganha cor ao ser ativada.
-- Configurável em `%LOCALAPPDATA%\SqlBeaver\environments.json`: regras com globs de servidor/banco,
-  cor `#RRGGBB` e flag `confirmExecute`.
+- Configurável via **menu Tools > SQL Beaver > Ambientes (cores)…** (ou clique direito no editor):
+  abre o editor visual de regras com ListView colorido, botões Adicionar/Editar/Remover/Subir/Descer
+  e ColorDialog integrado. As alterações são salvas e aplicadas imediatamente, sem reiniciar o SSMS.
+- O arquivo de configuração fica em `%LOCALAPPDATA%\SqlBeaver\environments.json` e pode ser editado
+  diretamente se preferir; basta reabrir o editor visual para recarregar.
+- Cada regra tem: nome, cor `#RRGGBB`, globs de servidor, globs de banco e flag `confirmExecute`.
 - Com `confirmExecute: true`, o SQL Beaver exige confirmação antes de **qualquer** Execute
   naquele ambiente — útil para bloquear execuções acidentais em produção.
 

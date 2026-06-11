@@ -49,6 +49,10 @@
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Recuperar consultas…</ButtonText></Strings>
       </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidEnvironments" priority="0x0106" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>Ambientes (cores)…</ButtonText></Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -69,6 +73,9 @@
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidRecoverSession" priority="0x0105">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidEnvironments" priority="0x0106">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
   </CommandPlacements>
@@ -92,6 +99,7 @@
       <IDSymbol name="cmdidFindReferences" value="0x0103" />
       <IDSymbol name="cmdidQueryHistory" value="0x0104" />
       <IDSymbol name="cmdidRecoverSession" value="0x0105" />
+      <IDSymbol name="cmdidEnvironments"   value="0x0106" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>
