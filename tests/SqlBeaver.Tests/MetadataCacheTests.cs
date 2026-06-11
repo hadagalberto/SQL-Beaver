@@ -151,8 +151,11 @@ namespace SqlBeaver.Tests
             Assert.IsType<TimeoutException>(observed);
 
             now = now.AddSeconds(31); // cooldown vencido
-            source.Handler = () => Task.FromResult(SampleMetadata());
+            // Retry controlado: pendente no Assert.Null, liberado para servir os dados.
+            var retry = new TaskCompletionSource<DbMetadata>();
+            source.Handler = () => retry.Task;
             Assert.Null(cache.TryGet("srv", "db", Req())); // nova tentativa disparada
+            retry.SetResult(SampleMetadata());
             await cache.GetPendingLoadForTest("srv", "db");
             Assert.NotNull(cache.TryGet("srv", "db", Req()));
             Assert.Equal(2, source.CallCount);
@@ -185,7 +188,13 @@ namespace SqlBeaver.Tests
 
             cache.Invalidate("srv", "db");
 
+            // Recarga controlada: pendente no momento do Assert.Null (frio determinístico),
+            // liberada em seguida para servir os dados sem corrida com Task.Run.
+            var reload = new TaskCompletionSource<DbMetadata>();
+            source.Handler = () => reload.Task;
+
             Assert.Null(cache.TryGet("srv", "db", Req())); // frio de novo: recarga disparada
+            reload.SetResult(SampleMetadata());
             await cache.GetPendingLoadForTest("srv", "db");
             Assert.Equal(2, source.CallCount);
             Assert.NotNull(cache.TryGet("srv", "db", Req()));
@@ -203,6 +212,14 @@ namespace SqlBeaver.Tests
             await cache.GetPendingLoadForTest("srv2", "db");
 
             cache.InvalidateAll();
+
+            // Bloqueia recargas: um cache realmente limpo devolve null mesmo com a
+            // carga disparada em background. Sem isso, a carga (FakeSource instantâneo)
+            // pode completar sincronamente dentro do TryGet — a continuação de
+            // Task.Run reentra o lock e repopula a Entry — tornando o Assert.Null
+            // não-determinístico. Com um TCS pendente o await sempre suspende.
+            var blocked = new TaskCompletionSource<DbMetadata>();
+            source.Handler = () => blocked.Task;
 
             Assert.Null(cache.TryGet("srv1", "db", Req()));
             Assert.Null(cache.TryGet("srv2", "db", Req()));
