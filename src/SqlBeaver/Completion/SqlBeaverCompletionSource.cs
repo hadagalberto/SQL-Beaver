@@ -17,6 +17,7 @@ using SqlBeaver.Connection;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Metadata;
 using SqlBeaver.Scripting;
+using SqlBeaver.Snippets;
 
 namespace SqlBeaver.Completion
 {
@@ -58,6 +59,8 @@ namespace SqlBeaver.Completion
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Key), "Chave primária");
         private static readonly ImageElement JoinIcon =
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Link), "JOIN por FK");
+        private static readonly ImageElement SnippetIcon =
+            new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Snippet), "Snippet");
 
         private readonly MetadataCache _cache;
         private ActiveConnection _connection;
@@ -178,6 +181,7 @@ namespace SqlBeaver.Completion
                     break;
 
                 default: // FreeIdentifier
+                    BuildSnippetItems(items);
                     BuildTableAndSchemaItems(items, metadata, scope, withAlias: false);
                     break;
             }
@@ -279,6 +283,24 @@ namespace SqlBeaver.Completion
                     filterText: suggestion.FilterText,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
                 index++;
+            }
+        }
+
+        private void BuildSnippetItems(ImmutableArray<CompletionItem>.Builder items)
+        {
+            foreach (SnippetDefinition snippet in SnippetStore.Catalog.Values)
+            {
+                string insert = snippet.Expansion?.Replace("$cursor$", string.Empty) ?? string.Empty;
+                items.Add(new CompletionItem(
+                    displayText: snippet.Shortcut,
+                    source: this,
+                    icon: SnippetIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: snippet.Title,
+                    insertText: insert,
+                    sortText: "zz_" + snippet.Shortcut, // depois de tabelas/schemas
+                    filterText: snippet.Shortcut,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
             }
         }
 
