@@ -23,13 +23,13 @@ namespace SqlBeaver.Scripting
     /// <summary>
     /// Para cada FK ligando uma tabela do escopo a uma tabela FORA do escopo, gera a
     /// sugestão de JOIN com alias novo e ON completo (FK composta → pares com AND). Puro.
+    /// Sugestões do mesmo schema da tabela de escopo são listadas antes das cross-schema.
     /// </summary>
     public static class FkJoinSuggestionBuilder
     {
         public static IReadOnlyList<FkJoinSuggestion> Build(
             IReadOnlyList<TableRef> scopeTables, DbMetadata metadata)
         {
-            var suggestions = new List<FkJoinSuggestion>();
             var seenInserts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var usedAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -47,8 +47,11 @@ namespace SqlBeaver.Scripting
 
                 string key = DbMetadata.TableKey(schema, tableRef.Table);
                 scopeKeys.Add(key);
-                resolved.Add(new ResolvedScopeTable(key, tableRef.Alias ?? tableRef.Table));
+                resolved.Add(new ResolvedScopeTable(key, schema, tableRef.Alias ?? tableRef.Table));
             }
+
+            var sameSchema = new List<FkJoinSuggestion>();
+            var crossSchema = new List<FkJoinSuggestion>();
 
             foreach (ResolvedScopeTable scopeTable in resolved)
             {
@@ -90,23 +93,34 @@ namespace SqlBeaver.Scripting
                         SqlIdentifier.Bracket(otherSchema) + "." + SqlIdentifier.Bracket(otherTable) +
                         " " + otherAlias + " — ON " + on;
 
-                    if (seenInserts.Add(insertText))
-                        suggestions.Add(new FkJoinSuggestion(displayText, insertText, otherTable));
+                    if (!seenInserts.Add(insertText))
+                        continue;
+
+                    bool isSameSchema = string.Equals(otherSchema, scopeTable.Schema, StringComparison.OrdinalIgnoreCase);
+                    var suggestion = new FkJoinSuggestion(displayText, insertText, otherTable);
+                    if (isSameSchema)
+                        sameSchema.Add(suggestion);
+                    else
+                        crossSchema.Add(suggestion);
                 }
             }
 
-            return suggestions;
+            sameSchema.AddRange(crossSchema);
+            return sameSchema;
         }
 
         private sealed class ResolvedScopeTable
         {
             public string Key { get; }
+            /// <summary>Schema da tabela do escopo, para classificar sugestões same-schema.</summary>
+            public string Schema { get; }
             /// <summary>Alias do escopo, ou o nome da tabela quando sem alias.</summary>
             public string Qualifier { get; }
 
-            public ResolvedScopeTable(string key, string qualifier)
+            public ResolvedScopeTable(string key, string schema, string qualifier)
             {
                 Key = key;
+                Schema = schema;
                 Qualifier = qualifier;
             }
         }

@@ -265,6 +265,7 @@ namespace SqlBeaver.Completion
                 scope = pruned;
             }
 
+            int index = 0;
             foreach (FkJoinSuggestion suggestion in FkJoinSuggestionBuilder.Build(scope, metadata))
             {
                 items.Add(new CompletionItem(
@@ -274,9 +275,10 @@ namespace SqlBeaver.Completion
                     filters: ImmutableArray<CompletionFilter>.Empty,
                     suffix: "FK",
                     insertText: suggestion.InsertText,
-                    sortText: "0_" + suggestion.DisplayText, // topo da lista
+                    sortText: "0_" + index.ToString("D3"), // topo da lista; preserva ordem do builder
                     filterText: suggestion.FilterText,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
+                index++;
             }
         }
 

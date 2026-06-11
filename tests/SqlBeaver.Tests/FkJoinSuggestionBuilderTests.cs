@@ -115,5 +115,34 @@ namespace SqlBeaver.Tests
             Assert.Equal("Financeiro.Titulos t — ON t.IdPessoa = p.IdPessoa", s.DisplayText);
             Assert.Equal("Titulos", s.FilterText);
         }
+
+        [Fact]
+        public void SameSchemaSuggestions_ComeFirst()
+        {
+            // Pessoas (Cadastro) tem FK para Financeiro.Titulos e para Cadastro.PessoasFisicas;
+            // a sugestão do MESMO schema (Cadastro) vem primeiro, mesmo com a FK cadastrada depois
+            var fkOther = new MetadataAssembler.ForeignKeyColumnRow(1,
+                "Financeiro", "Titulos", "IdPessoa", "Cadastro", "Pessoas", "IdPessoa");
+            var fkSame = new MetadataAssembler.ForeignKeyColumnRow(2,
+                "Cadastro", "PessoasFisicas", "IdPessoa", "Cadastro", "Pessoas", "IdPessoa");
+
+            var metadata = MetadataAssembler.Assemble(
+                new List<TableEntry>
+                {
+                    new TableEntry("Cadastro", "Pessoas"),
+                    new TableEntry("Cadastro", "PessoasFisicas"),
+                    new TableEntry("Financeiro", "Titulos"),
+                },
+                new List<string> { "Cadastro", "Financeiro" },
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow> { fkOther, fkSame });
+
+            var scope = new List<TableRef> { new TableRef("Cadastro", "Pessoas", "p") };
+            var suggestions = FkJoinSuggestionBuilder.Build(scope, metadata);
+
+            Assert.Equal(2, suggestions.Count);
+            Assert.StartsWith("Cadastro.PessoasFisicas", suggestions[0].InsertText);  // mesmo schema primeiro
+            Assert.StartsWith("Financeiro.Titulos", suggestions[1].InsertText);
+        }
     }
 }
