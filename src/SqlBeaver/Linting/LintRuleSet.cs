@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
@@ -32,8 +33,16 @@ namespace SqlBeaver.Linting
                 if (disabledRuleIds != null && IsDisabled(rule.Id, disabledRuleIds))
                     continue;
 
-                foreach (LintDiagnostic d in rule.Inspect(fragment))
-                    result.Add(d);
+                // Uma regra que lance num fragmento incomum não pode derrubar as outras 19.
+                try
+                {
+                    foreach (LintDiagnostic d in rule.Inspect(fragment))
+                        result.Add(d);
+                }
+                catch (Exception ex)
+                {
+                    SqlBeaver.Diagnostics.Log.Error("Regra de lint '" + rule.Id + "'", ex);
+                }
             }
 
             return result;

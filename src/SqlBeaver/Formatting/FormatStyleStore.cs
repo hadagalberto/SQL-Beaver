@@ -226,15 +226,26 @@ namespace SqlBeaver.Formatting
 
             string padrao = Path.Combine(FormatsDir, "Padrao.json");
 
+            bool migrated = false;
             if (File.Exists(LegacyFormatPath))
             {
-                // Preserve the user's existing customisations
-                File.Copy(LegacyFormatPath, padrao, overwrite: false);
-                Log.Info($"Migração: format.json copiado para {padrao}");
+                try
+                {
+                    // Preserve the user's existing customisations
+                    File.Copy(LegacyFormatPath, padrao, overwrite: false);
+                    Log.Info($"Migração: format.json copiado para {padrao}");
+                    migrated = true;
+                }
+                catch (Exception ex)
+                {
+                    // Legado bloqueado/ilegível: não deixar o estilo Padrao ausente (senão a
+                    // próxima sessão retorna cedo na migração e fica sem nenhum estilo).
+                    Log.Error("Migração: falha ao copiar format.json; gravando defaults", ex);
+                }
             }
-            else
+            if (!migrated)
             {
-                // Fresh install — write clean defaults
+                // Fresh install (ou cópia falhou) — write clean defaults
                 File.WriteAllText(padrao, FormatOptions.CreateDefault().Serialize(),
                     System.Text.Encoding.UTF8);
                 Log.Info($"Migração: Padrao.json de defaults criado em {padrao}");

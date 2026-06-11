@@ -264,29 +264,12 @@ namespace SqlBeaver.Commands
                 // Read full document text (CRLF as-is — TextPosition expects the same string).
                 string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
 
-                // Compute caret absolute offset in the document string.
-                // ActivePoint is 1-based line/column; we reconstruct the offset by counting chars.
+                // Caret absolute offset = comprimento do texto do início do documento até o caret.
+                // Conta CRLF e tabs como chars crus, exatamente como 'text' — correto por construção
+                // (mesmo padrão dos demais comandos de refatoração; DisplayColumn expandiria tabs e
+                // selecionaria/executaria o statement errado em scripts indentados com tab).
                 TextSelection sel = doc.Selection;
-                int caretLine   = sel.ActivePoint.Line;
-                int caretColumn = sel.ActivePoint.DisplayColumn; // 1-based, counts each char as 1
-
-                // Convert 1-based line/col → 0-based char offset in 'text'
-                // (same CRLF interpretation as TextPosition.FromOffset)
-                int caretOffset = 0;
-                int currentLine = 1;
-                for (int i = 0; i < text.Length; i++)
-                {
-                    if (currentLine == caretLine)
-                    {
-                        caretOffset = i + (caretColumn - 1);
-                        break;
-                    }
-                    if (text[i] == '\n')
-                        currentLine++;
-                }
-                // Edge case: caret on last line and loop ended without break
-                if (currentLine == caretLine && caretOffset == 0 && caretLine > 1)
-                    caretOffset = text.Length;
+                int caretOffset = doc.StartPoint.CreateEditPoint().GetText(sel.ActivePoint).Length;
 
                 StatementBounds bounds = StatementScopeAnalyzer.GetStatementBoundsAt(text, caretOffset);
 
