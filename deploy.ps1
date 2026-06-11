@@ -58,4 +58,18 @@ if (Test-Path $mefCache) {
     Write-Host "Cache MEF limpo."
 }
 
+# invalida o cache de configuração (pkgdef/menus) — sem isso o shell não relê registros novos
+foreach ($extRoot in @("$ssmsLocal\Extensions", "$ssmsIde\Extensions")) {
+    try {
+        if (Test-Path $extRoot) {
+            $marker = Join-Path $extRoot "extensions.configurationchanged"
+            if (-not (Test-Path $marker)) { New-Item -ItemType File -Path $marker -Force | Out-Null }
+            (Get-Item $marker).LastWriteTime = Get-Date
+            Write-Host "Cache de configuração invalidado: $marker"
+        }
+    } catch {
+        Write-Warning "Sem acesso a $extRoot (rode elevado uma vez se o menu Tools > SQL Beaver não aparecer)."
+    }
+}
+
 Write-Host "Pronto. Abra o SSMS (a primeira abertura será mais lenta - reconstrução do cache MEF)."

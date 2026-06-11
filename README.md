@@ -123,10 +123,11 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 - **Recuperar consultas…** — abre um diálogo com a lista de snapshots e permite
   restaurar qualquer aba anterior numa nova janela de query.
 - **Restauração automática de sessão** — fechou o SSMS, ele reabre com as mesmas
-  abas. Janelas de query não salvas (SQLQueryN) não pedem confirmação ao fechar:
-  o conteúdo é gravado em `%LOCALAPPDATA%\SqlBeaver\lastsession\` e reaberto
-  automaticamente no próximo início. Arquivos reais com alterações continuam
-  exibindo o prompt normal de salvar do SSMS.
+  abas. Janelas de query não salvas (SQLQueryN) são persistidas continuamente
+  (a cada 5 segundos, na troca de janela e no fechamento) em
+  `%LOCALAPPDATA%\SqlBeaver\lastsession\` e nunca pedem confirmação ao fechar;
+  o conteúdo é reaberto automaticamente no próximo início. Arquivos reais com
+  alterações continuam exibindo o prompt normal de salvar do SSMS.
 
 ## Instalação
 

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
@@ -12,17 +14,40 @@ using SqlBeaver.Diagnostics;
 namespace SqlBeaver.Session
 {
     /// <summary>
-    /// Restauração de sessão estilo SQL Prompt: no fechamento do SSMS
-    /// (DTEEvents.OnBeginShutdown) persiste o texto de todas as abas SQL abertas em
-    /// %LOCALAPPDATA%\SqlBeaver\lastsession\tab-NN.sql e suprime o prompt
-    /// salvar/descartar APENAS de janelas não salvas sem arquivo real no disco —
-    /// e somente depois de verificar que o conteúdo foi escrito. No próximo startup
-    /// as abas são reabertas automaticamente em novas janelas de query.
+    /// Restauração de sessão estilo SQL Prompt com keep-clean CONTÍNUO: docs não
+    /// salvos são mantidos não-sujos por persistência contínua (5s + troca de
+    /// janela + shutdown); o prompt do shell nunca tem o que perguntar; arquivos
+    /// reais do disco nunca são tocados. O diálogo "Save changes?" do SSMS enumera
+    /// documentos sujos ANTES do DTEEvents.OnBeginShutdown — marcar Saved só no
+    /// shutdown chega tarde, por isso cada passada persiste o texto das abas SQL em
+    /// %LOCALAPPDATA%\SqlBeaver\lastsession\tab-NN.sql e marca doc.Saved=true
+    /// APENAS em janelas não salvas sem arquivo real no disco, e somente depois de
+    /// verificar que o conteúdo foi escrito (PromptSuppressionRule). No próximo
+    /// startup as abas são reabertas automaticamente em novas janelas de query.
     /// </summary>
     internal static class SessionRestoreService
     {
-        // Ref forte: eventos COM do DTE são coletados pelo GC sem isso.
+        // Refs fortes: eventos COM do DTE são coletados pelo GC sem isso.
         private static DTEEvents _dteEvents;
+        private static WindowEvents _windowEvents;
+        private static DispatcherTimer _persistTimer;
+        private static DTE2 _dte;
+
+        // Última escrita VERIFICADA por caption (hash do conteúdo + arquivo de
+        // destino): docs inalterados pulam a escrita na cadência de 5s.
+        private static readonly Dictionary<string, VerifiedWrite> _verifiedByCaption =
+            new Dictionary<string, VerifiedWrite>(StringComparer.OrdinalIgnoreCase);
+
+        // Só persistir DEPOIS que a restauração do startup leu/limpou a sessão
+        // anterior — senão a primeira passada do timer sobrescreveria o índice
+        // antigo antes de ele ser reaberto.
+        private static volatile bool _restorePassDone;
+
+        private sealed class VerifiedWrite
+        {
+            public string ContentHash;
+            public string TabPath;
+        }
 
         private static string LastSessionDir =>
             Path.Combine(
@@ -45,10 +70,27 @@ namespace SqlBeaver.Session
                     Log.Info("SessionRestoreService: DTE indisponível — restauração de sessão desabilitada.");
                     return;
                 }
+                _dte = dte;
 
+                // Passada final best-effort no shutdown (o grosso já foi persistido
+                // pelas passadas contínuas — o prompt do shell já não tem o que perguntar).
                 _dteEvents = dte.Events.DTEEvents;
-                _dteEvents.OnBeginShutdown += SaveSessionOnShutdown;
-                Log.Info("SessionRestoreService: hook de OnBeginShutdown registrado.");
+                _dteEvents.OnBeginShutdown += PersistOpenDocumentsSafe;
+
+                // Troca de janela = passada imediata (ref forte própria; não
+                // compartilhar com o TabColorizer).
+                _windowEvents = dte.Events.WindowEvents;
+                _windowEvents.WindowActivated += (gotFocus, lostFocus) => PersistOpenDocumentsSafe();
+
+                // Cadência contínua de 5s em ApplicationIdle.
+                _persistTimer = new DispatcherTimer(DispatcherPriority.ApplicationIdle)
+                {
+                    Interval = TimeSpan.FromSeconds(5)
+                };
+                _persistTimer.Tick += (s, e) => PersistOpenDocumentsSafe();
+                _persistTimer.Start();
+
+                Log.Info("SessionRestoreService: keep-clean contínuo ativo (5s + troca de janela + shutdown).");
             }
             catch (Exception ex)
             {
@@ -57,58 +99,91 @@ namespace SqlBeaver.Session
         }
 
         // ---------------------------------------------------------------
-        // Shutdown — salvar TODAS as abas SQL (síncrono: o processo está morrendo)
+        // Persistência contínua — nunca propagar exceção (timer/eventos COM)
         // ---------------------------------------------------------------
-        private static void SaveSessionOnShutdown()
+        private static void PersistOpenDocumentsSafe()
         {
             try
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
-                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var dte = _dte ?? Package.GetGlobalService(typeof(DTE)) as DTE2;
                 if (dte == null) return;
+                PersistOpenDocuments(dte);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("SessionRestoreService.PersistOpenDocumentsSafe", ex);
+            }
+        }
 
-                string dir = LastSessionDir;
+        /// <summary>
+        /// Persiste o conjunto ATUAL de documentos .sql abertos (em ordem) em
+        /// lastsession\tab-NN.sql + index.json (atômico). Docs fechados saem do
+        /// índice (não são restaurados indevidamente; o snapshot de 60s do
+        /// SessionSnapshotService segue como rede de segurança do histórico).
+        /// Após cada escrita verificada (ou inalterada desde uma escrita
+        /// verificada), aplica PromptSuppressionRule e marca doc.Saved=true.
+        /// </summary>
+        private static void PersistOpenDocuments(DTE2 dte)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
 
-                // Limpa restos de sessões anteriores antes de gravar a atual
-                try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
-                catch { /* best-effort */ }
-                Directory.CreateDirectory(dir);
+            // A restauração do startup ainda não leu a sessão anterior — não
+            // sobrescrever o índice antes disso.
+            if (!_restorePassDone) return;
 
-                // Conexão: somente para o documento ativo
-                ActiveConnection activeConn = ConnectionService.GetActiveConnection();
-                string activeDocFullName = null;
-                try { activeDocFullName = dte.ActiveDocument?.FullName; } catch { }
+            string dir = LastSessionDir;
+            Directory.CreateDirectory(dir);
 
-                var entries = new List<SessionEntry>();
-                int n = 0;
+            // Conexão: somente para o documento ativo
+            ActiveConnection activeConn = ConnectionService.GetActiveConnection();
+            string activeDocFullName = null;
+            try { activeDocFullName = dte.ActiveDocument?.FullName; } catch { }
 
-                foreach (Document doc in dte.Documents)
+            var entries = new List<SessionEntry>();
+            var seenCaptions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int n = 0;
+
+            foreach (Document doc in dte.Documents)
+            {
+                try
                 {
+                    string fullName = doc.FullName;
+                    if (!fullName.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var textDoc = doc.Object("TextDocument") as TextDocument;
+                    if (textDoc == null) continue;
+
+                    string text;
                     try
                     {
-                        string fullName = doc.FullName;
-                        if (!fullName.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
-                            continue;
+                        text = textDoc.StartPoint.CreateEditPoint()
+                                      .GetText(textDoc.EndPoint);
+                    }
+                    catch { continue; }
 
-                        var textDoc = doc.Object("TextDocument") as TextDocument;
-                        if (textDoc == null) continue;
+                    if (string.IsNullOrEmpty(text)) continue;
 
-                        string text;
-                        try
-                        {
-                            text = textDoc.StartPoint.CreateEditPoint()
-                                          .GetText(textDoc.EndPoint);
-                        }
-                        catch { continue; }
+                    n++;
+                    string tabPath = Path.Combine(dir, $"tab-{n:00}.sql");
+                    string caption = NormalizeCaption(doc.Name);
+                    string hash = ComputeShortHash(text);
+                    seenCaptions.Add(caption);
 
-                        if (string.IsNullOrEmpty(text)) continue;
-
-                        n++;
-                        string tabPath = Path.Combine(dir, $"tab-{n:00}.sql");
-
-                        // Escrita SÍNCRONA e verificada — NUNCA suprimir o prompt
-                        // sem o conteúdo comprovadamente no disco.
-                        bool snapshotWritten = false;
+                    // Escrita verificada — NUNCA suprimir o prompt sem o conteúdo
+                    // comprovadamente no disco. Conteúdo + destino inalterados desde
+                    // uma escrita verificada → pula a escrita (cadência barata de 5s).
+                    bool snapshotWritten = false;
+                    if (_verifiedByCaption.TryGetValue(caption, out VerifiedWrite prev)
+                        && prev.ContentHash == hash
+                        && string.Equals(prev.TabPath, tabPath, StringComparison.OrdinalIgnoreCase)
+                        && File.Exists(tabPath))
+                    {
+                        snapshotWritten = true; // inalterado desde escrita verificada
+                    }
+                    else
+                    {
                         try
                         {
                             File.WriteAllText(tabPath, text, Encoding.UTF8);
@@ -123,58 +198,83 @@ namespace SqlBeaver.Session
 
                         if (snapshotWritten)
                         {
-                            bool isActive = string.Equals(fullName, activeDocFullName, StringComparison.OrdinalIgnoreCase);
-                            entries.Add(new SessionEntry
+                            _verifiedByCaption[caption] = new VerifiedWrite
                             {
-                                File     = tabPath,
-                                Caption  = NormalizeCaption(doc.Name),
-                                Server   = isActive ? activeConn?.Server : null,
-                                Database = isActive ? activeConn?.Database : null,
-                                SavedAt  = DateTime.Now.ToString("o")
-                            });
+                                ContentHash = hash,
+                                TabPath = tabPath
+                            };
                         }
-
-                        // Supressão do prompt: só janelas não-salvas SEM arquivo real
-                        // no disco (SQLQueryN), e só com o snapshot verificado.
-                        // Documento com arquivo real e alterações → prompt normal do SSMS.
-                        bool savedFlag;
-                        try { savedFlag = doc.Saved; }
-                        catch { savedFlag = true; } // em dúvida, não mexer
-
-                        bool fileExistsOnDisk = File.Exists(fullName);
-
-                        if (PromptSuppressionRule.ShouldMarkSaved(savedFlag, fileExistsOnDisk, snapshotWritten))
+                        else
                         {
-                            try { doc.Saved = true; }
-                            catch (Exception markEx)
-                            {
-                                Log.Error($"SessionRestoreService: falha ao marcar Saved ({doc.Name})", markEx);
-                            }
+                            _verifiedByCaption.Remove(caption);
                         }
                     }
-                    catch { /* per-document: nunca propagar */ }
-                }
 
-                // Índice por último, atômico (tmp + Replace)
-                if (entries.Count > 0)
-                {
-                    string json = SessionIndex.Serialize(entries);
-                    string tmp  = IndexPath + ".tmp";
-                    File.WriteAllText(tmp, json, Encoding.UTF8);
-                    try
+                    if (snapshotWritten)
                     {
-                        File.Replace(tmp, IndexPath, null);
+                        bool isActive = string.Equals(fullName, activeDocFullName, StringComparison.OrdinalIgnoreCase);
+                        entries.Add(new SessionEntry
+                        {
+                            File        = tabPath,
+                            Caption     = caption,
+                            Server      = isActive ? activeConn?.Server : null,
+                            Database    = isActive ? activeConn?.Database : null,
+                            SavedAt     = DateTime.Now.ToString("o"),
+                            ContentHash = hash
+                        });
                     }
-                    catch (FileNotFoundException)
+
+                    // Supressão do prompt: só janelas não-salvas SEM arquivo real
+                    // no disco (SQLQueryN), e só com o snapshot verificado.
+                    // Documento com arquivo real e alterações → prompt normal do SSMS.
+                    bool savedFlag;
+                    try { savedFlag = doc.Saved; }
+                    catch { savedFlag = true; } // em dúvida, não mexer
+
+                    bool fileExistsOnDisk = File.Exists(fullName);
+
+                    if (PromptSuppressionRule.ShouldMarkSaved(savedFlag, fileExistsOnDisk, snapshotWritten))
                     {
-                        File.Move(tmp, IndexPath);
+                        try { doc.Saved = true; }
+                        catch (Exception markEx)
+                        {
+                            Log.Error($"SessionRestoreService: falha ao marcar Saved ({doc.Name})", markEx);
+                        }
                     }
-                    Log.Info($"SessionRestoreService: {entries.Count} aba(s) persistida(s) para a próxima sessão.");
                 }
+                catch { /* per-document: nunca propagar */ }
             }
-            catch (Exception ex)
+
+            // Docs fechados saem do cache de escritas verificadas
+            var staleCaptions = new List<string>();
+            foreach (string cap in _verifiedByCaption.Keys)
+                if (!seenCaptions.Contains(cap)) staleCaptions.Add(cap);
+            foreach (string cap in staleCaptions)
+                _verifiedByCaption.Remove(cap);
+
+            // Remove tab-*.sql órfãos (docs fechados / numeração encolhida)
+            try
             {
-                Log.Error("SessionRestoreService.SaveSessionOnShutdown", ex);
+                var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (SessionEntry e in entries) referenced.Add(e.File);
+                foreach (string candidate in Directory.GetFiles(dir, "tab-*.sql"))
+                    if (!referenced.Contains(candidate))
+                        try { File.Delete(candidate); } catch { /* best-effort */ }
+            }
+            catch { /* best-effort */ }
+
+            // Índice por último, atômico (tmp + Replace) — SEMPRE reescrito com o
+            // conjunto atual, mesmo vazio (docs fechados não são restaurados depois).
+            string json = SessionIndex.Serialize(entries);
+            string tmp  = IndexPath + ".tmp";
+            File.WriteAllText(tmp, json, Encoding.UTF8);
+            try
+            {
+                File.Replace(tmp, IndexPath, null);
+            }
+            catch (FileNotFoundException)
+            {
+                File.Move(tmp, IndexPath);
             }
         }
 
@@ -221,7 +321,8 @@ namespace SqlBeaver.Session
                     }
                 }
 
-                // Conteúdo agora vive nas janelas (e nos snapshots de 60s) — apaga tudo
+                // Conteúdo agora vive nas janelas restauradas (docs untitled novos):
+                // a próxima passada de 5s os re-persiste — estado estável desejado.
                 CleanupLastSession();
 
                 if (restored > 0)
@@ -234,6 +335,12 @@ namespace SqlBeaver.Session
             catch (Exception ex)
             {
                 Log.Error("SessionRestoreService.RestorePreviousSessionAsync", ex);
+            }
+            finally
+            {
+                // Libera a persistência contínua (mesmo se a restauração falhou,
+                // a sessão anterior já teve sua chance de ser lida).
+                _restorePassDone = true;
             }
         }
 
@@ -258,6 +365,17 @@ namespace SqlBeaver.Session
         {
             if (string.IsNullOrEmpty(caption)) return caption;
             return caption.TrimEnd().TrimEnd('*').TrimEnd();
+        }
+
+        /// <summary>SHA-256 truncado (16 hex) — mesmo formato do SessionSnapshotService.</summary>
+        private static string ComputeShortHash(string text)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(text);
+            using (var sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(bytes);
+                return BitConverter.ToString(hash, 0, 8).Replace("-", "").ToLowerInvariant();
+            }
         }
     }
 }

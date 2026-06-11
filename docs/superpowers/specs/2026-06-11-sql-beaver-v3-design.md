@@ -109,9 +109,14 @@ pendências consolidadas na última seção e reportadas ao usuário na entrega.
   documento SQL aberto (dedup por hash) em `%LOCALAPPDATA%\SqlBeaver\sessions\` + `index.json`
   ({arquivo, caption, servidor, database, quando}, últimos 50, inclui abas já fechadas = histórico de
   abas). "Recuperar consultas…" abre diálogo com a lista → abre o snapshot numa nova janela.
-- **Pós-entrega: restauração automática de sessão** (OnBeginShutdown salva abas não-salvas sem
-  prompt — `doc.Saved=true` só após escrita verificada; startup reabre da `lastsession/`).
-  Reconexão automática das janelas restauradas = pendência.
+- **Pós-entrega: restauração automática de sessão — keep-clean contínuo** (modelo SQL Prompt:
+  o diálogo "Save changes?" do shell enumera documentos sujos ANTES do `OnBeginShutdown`, então
+  marcar `Saved` apenas no shutdown chega tarde; em vez disso, as janelas não salvas são
+  persistidas continuamente em `lastsession/` — timer de 5s em ApplicationIdle + troca de janela
+  + passada final no shutdown — com `doc.Saved=true` só após escrita verificada, dedup por hash
+  de conteúdo e `index.json` atômico sempre reescrito com o conjunto atual de abas; docs fechados
+  saem do índice e o snapshot de 60s segue como rede de segurança; startup reabre da
+  `lastsession/`). Reconexão automática das janelas restauradas = pendência.
 
 ## Pendências consolidadas (reportar ao usuário na entrega)
 
