@@ -31,6 +31,7 @@ namespace SqlBeaver
             Guard.ExecuteGuard.Initialize();
             Session.SessionSnapshotService.Initialize();
             Environments.TabColorizer.Initialize();
+            Session.SessionRestoreService.Initialize();
 
             if (await GetServiceAsync(typeof(System.ComponentModel.Design.IMenuCommandService))
                 is System.ComponentModel.Design.IMenuCommandService menuService)
@@ -48,6 +49,11 @@ namespace SqlBeaver
             {
                 Log.Info("IMenuCommandService indisponível — comandos nomeados/atalhos desabilitados.");
             }
+
+            // Restauração da última sessão: fire-and-forget, nunca atrasa/quebra o startup
+            // (o delay de 2s e o try/catch ficam dentro do serviço).
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(
+                () => Session.SessionRestoreService.RestorePreviousSessionAsync());
         }
 
         private static void AddCommand(System.ComponentModel.Design.IMenuCommandService service, int id, Action handler)

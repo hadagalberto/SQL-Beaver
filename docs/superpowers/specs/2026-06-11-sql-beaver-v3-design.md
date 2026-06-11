@@ -109,6 +109,9 @@ pendências consolidadas na última seção e reportadas ao usuário na entrega.
   documento SQL aberto (dedup por hash) em `%LOCALAPPDATA%\SqlBeaver\sessions\` + `index.json`
   ({arquivo, caption, servidor, database, quando}, últimos 50, inclui abas já fechadas = histórico de
   abas). "Recuperar consultas…" abre diálogo com a lista → abre o snapshot numa nova janela.
+- **Pós-entrega: restauração automática de sessão** (OnBeginShutdown salva abas não-salvas sem
+  prompt — `doc.Saved=true` só após escrita verificada; startup reabre da `lastsession/`).
+  Reconexão automática das janelas restauradas = pendência.
 
 ## Pendências consolidadas (reportar ao usuário na entrega)
 
