@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.ComponentModel.Composition;
 using System.Threading;
@@ -51,6 +52,12 @@ namespace SqlBeaver.Completion
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Table), "Tabela");
         private static readonly ImageElement SchemaIcon =
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.DatabaseSchema), "Schema");
+        private static readonly ImageElement ColumnIcon =
+            new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Column), "Coluna");
+        private static readonly ImageElement KeyIcon =
+            new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Key), "Chave primária");
+        private static readonly ImageElement JoinIcon =
+            new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Link), "JOIN por FK");
 
         private readonly MetadataCache _cache;
         private ActiveConnection _connection;
@@ -84,7 +91,7 @@ namespace SqlBeaver.Completion
                         return CompletionStartData.DoesNotParticipateInCompletion;
                 }
 
-                SqlContext context = AnalyzeAt(triggerLocation);
+                SqlContext context = AnalyzeAt(triggerLocation, out _);
                 if (context.Kind == SqlContextKind.None)
                     return CompletionStartData.DoesNotParticipateInCompletion;
 
@@ -113,7 +120,7 @@ namespace SqlBeaver.Completion
         {
             try
             {
-                SqlContext context = AnalyzeAt(triggerLocation);
+                SqlContext context = AnalyzeAt(triggerLocation, out IReadOnlyList<TableRef> scope);
                 ActiveConnection connection = _connection;
                 if (context.Kind == SqlContextKind.None || connection == null)
                     return Task.FromResult(CompletionContext.Empty);
@@ -124,7 +131,7 @@ namespace SqlBeaver.Completion
                 if (metadata == null)
                     return Task.FromResult(CompletionContext.Empty); // carga disparada em background
 
-                ImmutableArray<CompletionItem> items = BuildItems(context, metadata);
+                ImmutableArray<CompletionItem> items = BuildItems(context, metadata, scope);
 
                 if (!_loggedFirstItems)
                 {
@@ -145,50 +152,199 @@ namespace SqlBeaver.Completion
             IAsyncCompletionSession session, CompletionItem item, CancellationToken token)
             => Task.FromResult<object>(item.InsertText);
 
-        private ImmutableArray<CompletionItem> BuildItems(SqlContext context, DbMetadata metadata)
+        private ImmutableArray<CompletionItem> BuildItems(
+            SqlContext context, DbMetadata metadata, IReadOnlyList<TableRef> scope)
         {
             var items = ImmutableArray.CreateBuilder<CompletionItem>();
 
-            if (context.Kind == SqlContextKind.AfterDot)
+            switch (context.Kind)
             {
-                foreach (TableEntry table in metadata.Tables)
-                {
-                    if (string.Equals(table.Schema, context.DotPrefix, StringComparison.OrdinalIgnoreCase))
-                        items.Add(new CompletionItem(SqlIdentifier.Bracket(table.Name), this, TableIcon));
-                }
-                return items.ToImmutable();
-            }
+                case SqlContextKind.AfterDot:
+                    BuildDotItems(items, context.DotPrefix, metadata, scope);
+                    break;
 
-            // AfterFromJoin e FreeIdentifier: schemas + tabelas qualificadas
-            foreach (string schema in metadata.Schemas)
-                items.Add(new CompletionItem(SqlIdentifier.Bracket(schema), this, SchemaIcon));
+                case SqlContextKind.ColumnContext:
+                    BuildColumnItems(items, metadata, scope);
+                    break;
 
-            foreach (TableEntry table in metadata.Tables)
-            {
-                string qualified = SqlIdentifier.Bracket(table.Schema) + "." + SqlIdentifier.Bracket(table.Name);
-                items.Add(new CompletionItem(
-                    displayText: table.Name,   // nome simples: é o que o usuário digita
-                    source: this,
-                    icon: TableIcon,
-                    filters: ImmutableArray<CompletionFilter>.Empty,
-                    suffix: table.Schema,      // schema visível à direita, estilo nativo
-                    insertText: qualified,     // inserção continua qualificada
-                    sortText: table.Name + " " + qualified,
-                    filterText: table.Name,
-                    attributeIcons: ImmutableArray<ImageElement>.Empty));
+                case SqlContextKind.AfterJoin:
+                    BuildFkJoinItems(items, metadata, scope);
+                    BuildTableAndSchemaItems(items, metadata, scope, withAlias: true);
+                    break;
+
+                case SqlContextKind.AfterFromJoin:
+                    bool alias = string.Equals(context.TriggerKeyword, "FROM", StringComparison.OrdinalIgnoreCase);
+                    BuildTableAndSchemaItems(items, metadata, scope, withAlias: alias);
+                    break;
+
+                default: // FreeIdentifier
+                    BuildTableAndSchemaItems(items, metadata, scope, withAlias: false);
+                    break;
             }
 
             return items.ToImmutable();
         }
 
-        private static SqlContext AnalyzeAt(SnapshotPoint point)
+        private void BuildDotItems(
+            ImmutableArray<CompletionItem>.Builder items, string prefix,
+            DbMetadata metadata, IReadOnlyList<TableRef> scope)
+        {
+            // 1) alias (ou nome de tabela usado como qualificador) do escopo → colunas
+            string tableKey = ResolveScopeTableKey(prefix, metadata, scope);
+            if (tableKey != null &&
+                metadata.ColumnsByTable.TryGetValue(tableKey, out IReadOnlyList<ColumnEntry> columns))
+            {
+                foreach (ColumnEntry column in columns)
+                    items.Add(ColumnItem(column, qualifier: null));
+                return;
+            }
+
+            // 2) schema → tabelas dele (comportamento v1)
+            foreach (TableEntry table in metadata.Tables)
+            {
+                if (string.Equals(table.Schema, prefix, StringComparison.OrdinalIgnoreCase))
+                    items.Add(new CompletionItem(SqlIdentifier.Bracket(table.Name), this, TableIcon));
+            }
+        }
+
+        private void BuildColumnItems(
+            ImmutableArray<CompletionItem>.Builder items,
+            DbMetadata metadata, IReadOnlyList<TableRef> scope)
+        {
+            bool qualify = scope.Count > 1;
+            foreach (TableRef tableRef in scope)
+            {
+                string key = ResolveTableKey(tableRef, metadata);
+                if (key == null ||
+                    !metadata.ColumnsByTable.TryGetValue(key, out IReadOnlyList<ColumnEntry> columns))
+                    continue;
+
+                string qualifier = qualify ? (tableRef.Alias ?? tableRef.Table) : null;
+                string origin = tableRef.Alias ?? tableRef.Table;
+                foreach (ColumnEntry column in columns)
+                    items.Add(ColumnItem(column, qualifier, origin));
+            }
+        }
+
+        private CompletionItem ColumnItem(ColumnEntry column, string qualifier, string origin = null)
+        {
+            string insert = qualifier == null
+                ? SqlIdentifier.Bracket(column.Name)
+                : SqlIdentifier.Bracket(qualifier) + "." + SqlIdentifier.Bracket(column.Name);
+            string suffix = origin == null ? column.SqlType : column.SqlType + " — " + origin;
+
+            return new CompletionItem(
+                displayText: column.Name,
+                source: this,
+                icon: column.IsPrimaryKey ? KeyIcon : ColumnIcon,
+                filters: ImmutableArray<CompletionFilter>.Empty,
+                suffix: suffix,
+                insertText: insert,
+                sortText: column.Name,
+                filterText: column.Name,
+                attributeIcons: ImmutableArray<ImageElement>.Empty);
+        }
+
+        private void BuildFkJoinItems(
+            ImmutableArray<CompletionItem>.Builder items,
+            DbMetadata metadata, IReadOnlyList<TableRef> scope)
+        {
+            foreach (FkJoinSuggestion suggestion in FkJoinSuggestionBuilder.Build(scope, metadata))
+            {
+                items.Add(new CompletionItem(
+                    displayText: suggestion.DisplayText,
+                    source: this,
+                    icon: JoinIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: "FK",
+                    insertText: suggestion.InsertText,
+                    sortText: "0_" + suggestion.DisplayText, // topo da lista
+                    filterText: suggestion.DisplayText,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
+            }
+        }
+
+        private void BuildTableAndSchemaItems(
+            ImmutableArray<CompletionItem>.Builder items,
+            DbMetadata metadata, IReadOnlyList<TableRef> scope, bool withAlias)
+        {
+            foreach (string schema in metadata.Schemas)
+                items.Add(new CompletionItem(SqlIdentifier.Bracket(schema), this, SchemaIcon));
+
+            var usedAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (TableRef tableRef in scope)
+            {
+                if (tableRef.Alias != null)
+                    usedAliases.Add(tableRef.Alias);
+            }
+
+            foreach (TableEntry table in metadata.Tables)
+            {
+                string qualified = SqlIdentifier.Bracket(table.Schema) + "." + SqlIdentifier.Bracket(table.Name);
+                string insert = withAlias
+                    ? qualified + " " + AliasGenerator.Generate(table.Name, usedAliases)
+                    : qualified;
+
+                items.Add(new CompletionItem(
+                    displayText: table.Name,
+                    source: this,
+                    icon: TableIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: table.Schema,
+                    insertText: insert,
+                    sortText: table.Name + " " + qualified,
+                    filterText: table.Name,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
+            }
+        }
+
+        private static string ResolveScopeTableKey(
+            string prefix, DbMetadata metadata, IReadOnlyList<TableRef> scope)
+        {
+            foreach (TableRef tableRef in scope)
+            {
+                bool aliasMatch = string.Equals(tableRef.Alias, prefix, StringComparison.OrdinalIgnoreCase);
+                bool nameMatch = tableRef.Alias == null &&
+                                 string.Equals(tableRef.Table, prefix, StringComparison.OrdinalIgnoreCase);
+                if (aliasMatch || nameMatch)
+                    return ResolveTableKey(tableRef, metadata);
+            }
+            return null;
+        }
+
+        private static string ResolveTableKey(TableRef tableRef, DbMetadata metadata)
+        {
+            if (tableRef.Schema != null)
+                return DbMetadata.TableKey(tableRef.Schema, tableRef.Table);
+
+            string schema = null;
+            foreach (TableEntry table in metadata.Tables)
+            {
+                if (string.Equals(table.Name, tableRef.Table, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (schema != null)
+                        return null; // ambíguo
+                    schema = table.Schema;
+                }
+            }
+            return schema == null ? null : DbMetadata.TableKey(schema, tableRef.Table);
+        }
+
+        private static SqlContext AnalyzeAt(SnapshotPoint point, out IReadOnlyList<TableRef> scope)
         {
             ITextSnapshot snapshot = point.Snapshot;
             int caret = point.Position;
             int windowStart = Math.Max(0, caret - MaxAnalysisWindow);
-            string text = snapshot.GetText(windowStart, caret - windowStart);
+            // janela do escopo inclui o texto DEPOIS do caret (SELECT | FROM ...)
+            int windowEnd = Math.Min(snapshot.Length, caret + MaxAnalysisWindow);
+            string textBefore = snapshot.GetText(windowStart, caret - windowStart);
+            string fullWindow = caret == windowEnd
+                ? textBefore
+                : textBefore + snapshot.GetText(caret, windowEnd - caret);
 
-            SqlContext context = SqlContextAnalyzer.Analyze(text, text.Length);
+            scope = StatementScopeAnalyzer.GetTablesInScope(fullWindow, textBefore.Length);
+
+            SqlContext context = SqlContextAnalyzer.Analyze(textBefore, textBefore.Length);
             if (context.Kind == SqlContextKind.None || windowStart == 0)
                 return context;
 
