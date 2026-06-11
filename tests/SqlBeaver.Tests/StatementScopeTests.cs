@@ -127,5 +127,22 @@ namespace SqlBeaver.Tests
         {
             Assert.Empty(Scope(""));
         }
+
+        [Fact]
+        public void UpdateTarget_IsInScope()
+        {
+            var r = Assert.Single(Scope("UPDATE Cadastro.Pessoas SET Nome = 'x' WHERE Id = 1"));
+            Assert.Equal("Cadastro", r.Schema);
+            Assert.Equal("Pessoas", r.Table);
+            Assert.Null(r.Alias); // SET é keyword, não vira alias
+        }
+
+        [Fact]
+        public void UpdateWithFromForm_CapturesBoth()
+        {
+            var refs = Scope("UPDATE p SET p.Nome = 'x' FROM Cadastro.Pessoas p WHERE p.Id = 1");
+            // "p" (alvo) não resolve para tabela conhecida; o FROM traz a tabela real
+            Assert.Contains(refs, r => r.Table == "Pessoas" && r.Alias == "p");
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace SqlBeaver.Metadata
@@ -46,5 +47,21 @@ namespace SqlBeaver.Metadata
         }
 
         public static string TableKey(string schema, string table) => schema + "." + table;
+
+        /// <summary>Schema da tabela quando o nome é único entre os schemas; null se ambíguo/desconhecido.</summary>
+        public string ResolveUniqueSchema(string tableName)
+        {
+            string schema = null;
+            foreach (TableEntry table in Tables)
+            {
+                if (string.Equals(table.Name, tableName, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (schema != null)
+                        return null;
+                    schema = table.Schema;
+                }
+            }
+            return schema;
+        }
     }
 }

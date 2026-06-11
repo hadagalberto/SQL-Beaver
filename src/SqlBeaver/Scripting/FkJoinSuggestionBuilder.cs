@@ -10,11 +10,13 @@ namespace SqlBeaver.Scripting
     {
         public string DisplayText { get; }
         public string InsertText { get; }
+        public string FilterText { get; }
 
-        public FkJoinSuggestion(string displayText, string insertText)
+        public FkJoinSuggestion(string displayText, string insertText, string filterText)
         {
             DisplayText = displayText;
             InsertText = insertText;
+            FilterText = filterText;
         }
     }
 
@@ -39,7 +41,7 @@ namespace SqlBeaver.Scripting
                 if (tableRef.Alias != null)
                     usedAliases.Add(tableRef.Alias);
 
-                string schema = tableRef.Schema ?? ResolveUniqueSchema(metadata, tableRef.Table);
+                string schema = tableRef.Schema ?? metadata.ResolveUniqueSchema(tableRef.Table);
                 if (schema == null)
                     continue; // não qualificado e ambíguo/desconhecido: ignora
 
@@ -84,27 +86,16 @@ namespace SqlBeaver.Scripting
                         SqlIdentifier.Bracket(otherSchema) + "." + SqlIdentifier.Bracket(otherTable) +
                         " " + otherAlias + " ON " + on;
 
+                    string displayText =
+                        SqlIdentifier.Bracket(otherSchema) + "." + SqlIdentifier.Bracket(otherTable) +
+                        " " + otherAlias + " — ON " + on;
+
                     if (seenInserts.Add(insertText))
-                        suggestions.Add(new FkJoinSuggestion(insertText, insertText));
+                        suggestions.Add(new FkJoinSuggestion(displayText, insertText, otherTable));
                 }
             }
 
             return suggestions;
-        }
-
-        private static string ResolveUniqueSchema(DbMetadata metadata, string tableName)
-        {
-            string schema = null;
-            foreach (TableEntry table in metadata.Tables)
-            {
-                if (string.Equals(table.Name, tableName, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (schema != null)
-                        return null; // ambíguo
-                    schema = table.Schema;
-                }
-            }
-            return schema;
         }
 
         private sealed class ResolvedScopeTable

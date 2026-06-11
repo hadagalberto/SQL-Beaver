@@ -89,7 +89,8 @@ namespace SqlBeaver.Analysis
 
                     if (parenDepth == 0 &&
                         (string.Equals(token, "FROM", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(token, "JOIN", StringComparison.OrdinalIgnoreCase)))
+                         string.Equals(token, "JOIN", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(token, "UPDATE", StringComparison.OrdinalIgnoreCase)))
                     {
                         bool allowCommaList = string.Equals(token, "FROM", StringComparison.OrdinalIgnoreCase);
                         do

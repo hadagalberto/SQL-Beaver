@@ -91,7 +91,7 @@ namespace SqlBeaver.Completion
                         return CompletionStartData.DoesNotParticipateInCompletion;
                 }
 
-                SqlContext context = AnalyzeAt(triggerLocation, out _);
+                SqlContext context = AnalyzeContextAt(triggerLocation);
                 if (context.Kind == SqlContextKind.None)
                     return CompletionStartData.DoesNotParticipateInCompletion;
 
@@ -168,7 +168,7 @@ namespace SqlBeaver.Completion
                     break;
 
                 case SqlContextKind.AfterJoin:
-                    BuildFkJoinItems(items, metadata, scope);
+                    BuildFkJoinItems(items, metadata, scope, context.Partial);
                     BuildTableAndSchemaItems(items, metadata, scope, withAlias: true);
                     break;
 
@@ -247,8 +247,24 @@ namespace SqlBeaver.Completion
 
         private void BuildFkJoinItems(
             ImmutableArray<CompletionItem>.Builder items,
-            DbMetadata metadata, IReadOnlyList<TableRef> scope)
+            DbMetadata metadata, IReadOnlyList<TableRef> scope, string partial = null)
         {
+            // O parcial digitado depois do JOIN entra no escopo como TableRef sem alias;
+            // sem a poda, a própria sugestão FK que o usuário está digitando é descartada
+            // como "já em escopo".
+            if (!string.IsNullOrEmpty(partial))
+            {
+                var pruned = new List<TableRef>(scope.Count);
+                foreach (TableRef tableRef in scope)
+                {
+                    bool isTypedPartial = tableRef.Alias == null && tableRef.Schema == null &&
+                        string.Equals(tableRef.Table, partial, StringComparison.OrdinalIgnoreCase);
+                    if (!isTypedPartial)
+                        pruned.Add(tableRef);
+                }
+                scope = pruned;
+            }
+
             foreach (FkJoinSuggestion suggestion in FkJoinSuggestionBuilder.Build(scope, metadata))
             {
                 items.Add(new CompletionItem(
@@ -259,7 +275,7 @@ namespace SqlBeaver.Completion
                     suffix: "FK",
                     insertText: suggestion.InsertText,
                     sortText: "0_" + suggestion.DisplayText, // topo da lista
-                    filterText: suggestion.DisplayText,
+                    filterText: suggestion.FilterText,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
             }
         }
@@ -317,19 +333,33 @@ namespace SqlBeaver.Completion
             if (tableRef.Schema != null)
                 return DbMetadata.TableKey(tableRef.Schema, tableRef.Table);
 
-            string schema = null;
-            foreach (TableEntry table in metadata.Tables)
-            {
-                if (string.Equals(table.Name, tableRef.Table, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (schema != null)
-                        return null; // ambíguo
-                    schema = table.Schema;
-                }
-            }
+            string schema = metadata.ResolveUniqueSchema(tableRef.Table);
             return schema == null ? null : DbMetadata.TableKey(schema, tableRef.Table);
         }
 
+        /// <summary>
+        /// Versão leve para a thread de UI: janela apenas para trás, sem leitura forward
+        /// nem cálculo de escopo. Ver AnalyzeAt para a versão completa usada em background.
+        /// </summary>
+        private static SqlContext AnalyzeContextAt(SnapshotPoint point)
+        {
+            ITextSnapshot snapshot = point.Snapshot;
+            int caret = point.Position;
+            int windowStart = Math.Max(0, caret - MaxAnalysisWindow);
+            string textBefore = snapshot.GetText(windowStart, caret - windowStart);
+
+            SqlContext context = SqlContextAnalyzer.Analyze(textBefore, textBefore.Length);
+            if (context.Kind == SqlContextKind.None || windowStart == 0)
+                return context;
+
+            // reprojetar PartialStart da janela para coordenadas do snapshot
+            // (mesma lógica de re-projeção de AnalyzeAt — ver abaixo)
+            return new SqlContext(context.Kind, context.DotPrefix, context.Partial,
+                context.PartialStart + windowStart, context.TriggerKeyword);
+        }
+
+        // Usado em GetCompletionContextAsync (thread de background): lê janela forward
+        // para calcular o escopo completo. AnalyzeContextAt é a versão leve para a UI.
         private static SqlContext AnalyzeAt(SnapshotPoint point, out IReadOnlyList<TableRef> scope)
         {
             ITextSnapshot snapshot = point.Snapshot;

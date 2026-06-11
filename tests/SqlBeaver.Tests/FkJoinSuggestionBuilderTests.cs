@@ -106,5 +106,14 @@ namespace SqlBeaver.Tests
             var scope = new List<TableRef> { new TableRef("Cadastro", "Pessoas", "p") };
             Assert.Empty(FkJoinSuggestionBuilder.Build(scope, Metadata()));
         }
+
+        [Fact]
+        public void Display_UsesEmDashSeparator_AndFilterTextIsTableName()
+        {
+            var scope = new List<TableRef> { new TableRef("Cadastro", "Pessoas", "p") };
+            var s = Assert.Single(FkJoinSuggestionBuilder.Build(scope, Metadata(TitulosToPessoas)));
+            Assert.Equal("Financeiro.Titulos t — ON t.IdPessoa = p.IdPessoa", s.DisplayText);
+            Assert.Equal("Titulos", s.FilterText);
+        }
     }
 }
