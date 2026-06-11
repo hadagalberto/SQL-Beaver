@@ -125,6 +125,22 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
   schema nos identificadores de tabela.
 - **Rename alias / @variável** — diálogo de novo nome; substituição
   token-aware no escopo do statement (alias) ou do batch entre GOs (variável).
+- **Inline EXEC** — com o cursor sobre uma chamada `EXEC [schema.]proc [args]`,
+  busca a definição da procedure em background (`OBJECT_DEFINITION`), gera um
+  `DECLARE` por parâmetro (argumento da chamada por nome/posição, ou o default) e
+  insere o corpo da proc no lugar do EXEC (um undo). `RETURN` com valor vira um aviso
+  em comentário.
+- **Encapsular como procedure…** — com um trecho selecionado, detecta as `@vars`
+  usadas e não declaradas (viram parâmetros; tipo herdado de um `DECLARE` acima ou
+  `sql_variant`), pede schema/nome e abre o `CREATE PROCEDURE` em uma nova janela
+  (não altera o script original).
+- **Inserir ponto-e-vírgula** — anexa `;` ao fim de cada statement que não tem
+  (ignora linhas `GO` e comentários finais).
+- **Adicionar colchetes** / **Remover colchetes** — coloca `[ ]` em todos os
+  identificadores, ou remove de `[x]` quando o nome é um identificador regular válido
+  (mantém colchetes em nomes com espaço ou palavras reservadas).
+- **Aplicar casing do banco** — corrige o casing de schemas, tabelas, colunas e
+  objetos para o casing canônico do cache (nomes ambíguos são ignorados).
 
 ### QuickInfo (hover)
 

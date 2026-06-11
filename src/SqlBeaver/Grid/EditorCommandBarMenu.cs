@@ -37,6 +37,12 @@ namespace SqlBeaver.Grid
         private static CommandBarButton _qualifyNamesButton;
         private static CommandBarButton _unqualifyNamesButton;
         private static CommandBarButton _renameButton;
+        private static CommandBarButton _inlineExecButton;
+        private static CommandBarButton _encapsulateButton;
+        private static CommandBarButton _insertSemicolonsButton;
+        private static CommandBarButton _addBracketsButton;
+        private static CommandBarButton _removeBracketsButton;
+        private static CommandBarButton _applyCasingButton;
 
         public static void Initialize()
         {
@@ -73,6 +79,12 @@ namespace SqlBeaver.Grid
                 _qualifyNamesButton    = AddButton(_refactorPopup, "Qualify object names",        OnQualifyNames,    beginGroup: false);
                 _unqualifyNamesButton  = AddButton(_refactorPopup, "Remove qualificação",         OnUnqualifyNames,  beginGroup: false);
                 _renameButton          = AddButton(_refactorPopup, "Rename alias/variável…",      OnRename,          beginGroup: true);
+                _inlineExecButton      = AddButton(_refactorPopup, "Inline EXEC",                 OnInlineExec,      beginGroup: true);
+                _encapsulateButton     = AddButton(_refactorPopup, "Encapsular como procedure…",  OnEncapsulate,     beginGroup: false);
+                _insertSemicolonsButton= AddButton(_refactorPopup, "Inserir ponto-e-vírgula",     OnInsertSemicolons, beginGroup: true);
+                _addBracketsButton     = AddButton(_refactorPopup, "Adicionar colchetes",         OnAddBrackets,     beginGroup: false);
+                _removeBracketsButton  = AddButton(_refactorPopup, "Remover colchetes",           OnRemoveBrackets,  beginGroup: false);
+                _applyCasingButton     = AddButton(_refactorPopup, "Aplicar casing do banco",     OnApplyCasing,     beginGroup: false);
 
                 Log.Info("Comandos registrados no menu de contexto do editor SQL.");
             }
@@ -226,6 +238,90 @@ namespace SqlBeaver.Grid
             {
                 Log.Error("Rename alias/variable", ex);
                 ShowStatus("falha em Rename — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnInlineExec(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.InlineExec();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Inline EXEC", ex);
+                ShowStatus("falha em Inline EXEC — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnEncapsulate(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.EncapsulateAsProcedure();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Encapsular como proc", ex);
+                ShowStatus("falha em Encapsular — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnInsertSemicolons(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.InsertSemicolons();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Inserir ponto-e-vírgula", ex);
+                ShowStatus("falha em Inserir ponto-e-vírgula — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnAddBrackets(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.AddBrackets();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Adicionar colchetes", ex);
+                ShowStatus("falha em Adicionar colchetes — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnRemoveBrackets(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.RemoveBrackets();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Remover colchetes", ex);
+                ShowStatus("falha em Remover colchetes — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnApplyCasing(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.ApplyCasing();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Aplicar casing", ex);
+                ShowStatus("falha em Aplicar casing — veja Output > SQL Beaver");
             }
         }
 

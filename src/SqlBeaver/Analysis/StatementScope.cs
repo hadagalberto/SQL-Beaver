@@ -161,6 +161,125 @@ namespace SqlBeaver.Analysis
             return TrimmedBounds(text, statementStart, text.Length);
         }
 
+        /// <summary>One statement span, with the raw (untrimmed) [Start, End) range, whether it
+        /// was terminated by an explicit ';', and the offset of that ';' when present.</summary>
+        public struct StatementSpan
+        {
+            /// <summary>Raw start offset (includes leading whitespace/comments).</summary>
+            public int RawStart;
+            /// <summary>Raw end offset (exclusive). When terminated by ';' this is the offset of the ';';
+            /// when terminated by GO/EOF it is the offset just before the terminator.</summary>
+            public int RawEnd;
+            /// <summary>True when the statement was explicitly terminated by ';'.</summary>
+            public bool EndedWithSemicolon;
+        }
+
+        /// <summary>Enumerates every statement span in <paramref name="text"/> using the same partitioning
+        /// as <see cref="GetStatementBoundsAt"/> (;/GO/implicit starters with absorption). GO lines are
+        /// boundaries, not statements. Whitespace-only spans are skipped. Pure.</summary>
+        public static IReadOnlyList<StatementSpan> EnumerateStatements(string text)
+        {
+            var result = new List<StatementSpan>();
+            if (string.IsNullOrEmpty(text)) return result;
+
+            int statementStart = 0;
+            int parenDepth = 0;
+            string statementStarter = null;
+            bool absorbedDml = false;
+            string lastWord = null;
+            bool inLineComment = false, inString = false, inQuotedIdent = false;
+            int blockCommentDepth = 0;
+
+            int i = 0;
+            while (i < text.Length)
+            {
+                char c = text[i];
+
+                if (inLineComment) { if (c == '\n') inLineComment = false; i++; continue; }
+                if (blockCommentDepth > 0)
+                {
+                    if (c == '*' && i + 1 < text.Length && text[i + 1] == '/') { blockCommentDepth--; i += 2; continue; }
+                    if (c == '/' && i + 1 < text.Length && text[i + 1] == '*') { blockCommentDepth++; i += 2; continue; }
+                    i++; continue;
+                }
+                if (inString) { if (c == '\'') inString = false; i++; continue; }
+                if (inQuotedIdent) { if (c == '"') inQuotedIdent = false; i++; continue; }
+
+                if (c == '-' && i + 1 < text.Length && text[i + 1] == '-') { inLineComment = true; i += 2; continue; }
+                if (c == '/' && i + 1 < text.Length && text[i + 1] == '*') { blockCommentDepth = 1; i += 2; continue; }
+                if (c == '\'') { inString = true; i++; continue; }
+                if (c == '"') { inQuotedIdent = true; i++; continue; }
+                if (c == '(') { parenDepth++; i++; continue; }
+                if (c == ')') { if (parenDepth > 0) parenDepth--; i++; continue; }
+
+                if (c == ';' && parenDepth == 0)
+                {
+                    AddSpan(result, text, statementStart, i, endedWithSemicolon: true);
+                    statementStart = i + 1;
+                    parenDepth = 0; statementStarter = null; absorbedDml = false; lastWord = null;
+                    i++; continue;
+                }
+
+                if (c == '[' || IsIdentifierStart(c))
+                {
+                    int tokenStart = i;
+                    string token = ReadIdentifier(text, ref i);
+
+                    if (parenDepth == 0 && string.Equals(token, "GO", StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddSpan(result, text, statementStart, tokenStart, endedWithSemicolon: false);
+                        statementStart = i;
+                        statementStarter = null; absorbedDml = false; lastWord = null;
+                        continue;
+                    }
+
+                    if (parenDepth == 0 && StatementStarters.Contains(token))
+                    {
+                        if (statementStarter == null)
+                        {
+                            statementStarter = token;
+                        }
+                        else if (string.Equals(token, "SELECT", StringComparison.OrdinalIgnoreCase) &&
+                                 lastWord != null && CompoundConnectors.Contains(lastWord))
+                        {
+                            // compound query: same statement
+                        }
+                        else if (DmlStarters.Contains(token) && AbsorbingStarters.Contains(statementStarter) && !absorbedDml)
+                        {
+                            absorbedDml = true;
+                        }
+                        else
+                        {
+                            AddSpan(result, text, statementStart, tokenStart, endedWithSemicolon: false);
+                            statementStart = tokenStart;
+                            statementStarter = token;
+                            absorbedDml = false;
+                        }
+                    }
+
+                    if (parenDepth == 0)
+                        lastWord = token;
+
+                    continue;
+                }
+
+                i++;
+            }
+
+            AddSpan(result, text, statementStart, text.Length, endedWithSemicolon: false);
+            return result;
+        }
+
+        private static void AddSpan(List<StatementSpan> result, string text, int rawStart, int rawEnd, bool endedWithSemicolon)
+        {
+            // skip spans that are entirely whitespace
+            int s = rawStart;
+            while (s < rawEnd && char.IsWhiteSpace(text[s])) s++;
+            if (s >= rawEnd && !endedWithSemicolon) return; // empty (e.g. between GO lines)
+            if (s >= rawEnd && endedWithSemicolon) return;  // stray ';' with nothing before it
+            result.Add(new StatementSpan { RawStart = rawStart, RawEnd = rawEnd, EndedWithSemicolon = endedWithSemicolon });
+        }
+
         private static StatementBounds TrimmedBounds(string text, int rawStart, int rawEnd)
         {
             // trim leading whitespace

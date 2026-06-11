@@ -9,6 +9,7 @@ using SqlBeaver.Completion;
 using SqlBeaver.Connection;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Metadata;
+using SqlBeaver.Navigation;
 
 namespace SqlBeaver.Refactoring
 {
@@ -269,6 +270,306 @@ namespace SqlBeaver.Refactoring
             {
                 Log.Error("Rename alias/variable", ex);
                 ShowStatus("falha em Rename — veja Output > SQL Beaver");
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Insert semicolons / Brackets / Apply casing (pure whole-doc transforms)
+        // ---------------------------------------------------------------
+
+        public static void InsertSemicolons()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ApplyTextTransform("Inserir ponto-e-vírgula", "Insert Semicolons",
+                (text, metadata) => SemicolonInserter.AddSemicolons(text),
+                needsMetadata: false);
+        }
+
+        public static void AddBrackets()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ApplyTextTransform("Adicionar colchetes", "Add Brackets",
+                (text, metadata) => BracketToggler.AddBrackets(text),
+                needsMetadata: false);
+        }
+
+        public static void RemoveBrackets()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ApplyTextTransform("Remover colchetes", "Remove Brackets",
+                (text, metadata) => BracketToggler.RemoveBrackets(text),
+                needsMetadata: false);
+        }
+
+        public static void ApplyCasing()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ApplyTextTransform("Aplicar casing", "Apply Casing",
+                (text, metadata) => ObjectCasingFixer.Fix(text, metadata),
+                needsMetadata: true);
+        }
+
+        /// <summary>Reads selection (or whole doc), applies a pure transform, writes back as one undo.</summary>
+        private static void ApplyTextTransform(
+            string label, string undoName,
+            Func<string, DbMetadata, string> transform, bool needsMetadata)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus(label + ": nenhum documento ativo."); return; }
+
+                DbMetadata metadata = null;
+                if (needsMetadata)
+                {
+                    metadata = GetMetadata(dte);
+                    if (metadata == null) { ShowStatus(label + ": cache ainda carregando — tente novamente."); return; }
+                }
+
+                bool hasSelection = !doc.Selection.IsEmpty;
+                string original = hasSelection
+                    ? doc.Selection.Text
+                    : doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+
+                if (string.IsNullOrWhiteSpace(original)) { ShowStatus(label + ": nada para processar."); return; }
+
+                string result = transform(original, metadata);
+                if (result == null || string.Equals(result, original, StringComparison.Ordinal))
+                {
+                    ShowStatus(label + ": nada a alterar.");
+                    return;
+                }
+
+                dte.UndoContext.Open("SQL Beaver " + undoName);
+                try
+                {
+                    if (hasSelection)
+                    {
+                        doc.Selection.Insert(result, (int)vsInsertFlags.vsInsertFlagsContainNewText);
+                    }
+                    else
+                    {
+                        EditPoint start = doc.StartPoint.CreateEditPoint();
+                        start.ReplaceText(doc.EndPoint, result,
+                            (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
+                    }
+                }
+                finally
+                {
+                    dte.UndoContext.Close();
+                }
+
+                ShowStatus(label + ": concluído.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(label, ex);
+                ShowStatus("falha em " + label + " — veja Output > SQL Beaver");
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Inline EXEC
+        // ---------------------------------------------------------------
+
+        public static void InlineExec()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            const string label = "Inline EXEC";
+            try
+            {
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus(label + ": nenhum documento ativo."); return; }
+
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                TextSelection sel = doc.Selection;
+                string textUpToCaret = doc.StartPoint.CreateEditPoint().GetText(sel.ActivePoint);
+                int caretOffset = textUpToCaret.Length;
+
+                ExecCall call = ExecCallParser.Parse(text, caretOffset);
+                if (call == null) { ShowStatus(label + ": cursor não está sobre uma chamada EXEC."); return; }
+
+                ActiveConnection conn = ConnectionService.GetActiveConnection();
+                if (conn == null) { ShowStatus(label + ": sem conexão ativa."); return; }
+
+                DbMetadata metadata = GetMetadata(dte);
+                string schema = call.Schema;
+                if (string.IsNullOrEmpty(schema) && metadata != null)
+                {
+                    foreach (ObjectEntry o in metadata.Objects)
+                    {
+                        if (string.Equals(o.Name, call.Proc, StringComparison.OrdinalIgnoreCase))
+                        { schema = o.Schema; break; }
+                    }
+                }
+                string qualifiedName = (string.IsNullOrEmpty(schema) ? "" : schema + ".") + call.Proc;
+
+                int spanStart = call.SpanStart;
+                int spanLen = call.SpanLength;
+
+                MetadataRequest request = new MetadataRequest
+                {
+                    ConnectionString = conn.ConnectionString,
+                    AccessToken = conn.AccessToken,
+                    ProviderConnectionType = conn.ProviderConnectionType
+                };
+
+                ShowStatus(label + ": buscando definição de " + qualifiedName + "…");
+
+                _ = System.Threading.Tasks.Task.Run(() =>
+                {
+                    try
+                    {
+                        string definition = FetchObjectDefinition(request, qualifiedName);
+                        if (string.IsNullOrEmpty(definition))
+                        {
+                            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                            {
+                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                                ShowStatus(label + ": definição de " + qualifiedName + " indisponível.");
+                            });
+                            return;
+                        }
+
+                        ProcBody body = ProcBodyExtractor.Extract(definition);
+                        string replacement = InlineExecBuilder.Build(call, body);
+
+                        _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                        {
+                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                            ApplyInlineEdit(label, spanStart, spanLen, replacement);
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(label + ": " + qualifiedName, ex);
+                        _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                        {
+                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                            ShowStatus(label + ": falha — veja Output > SQL Beaver");
+                        });
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Error(label, ex);
+                ShowStatus("falha em " + label + " — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void ApplyInlineEdit(string label, int spanStart, int spanLen, string replacement)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus(label + ": nenhum documento ativo."); return; }
+
+                // Re-read current text to compute line/col against the live buffer.
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                if (spanStart < 0 || spanStart + spanLen > text.Length)
+                {
+                    ShowStatus(label + ": o documento mudou — refaça a operação.");
+                    return;
+                }
+
+                dte.UndoContext.Open("SQL Beaver Inline EXEC");
+                try
+                {
+                    TextPosition.FromOffset(text, spanStart, out int startLine, out int startCol);
+                    TextPosition.FromOffset(text, spanStart + spanLen, out int endLine, out int endCol);
+                    EditPoint epStart = doc.StartPoint.CreateEditPoint();
+                    epStart.MoveToLineAndOffset(startLine, startCol);
+                    EditPoint epEnd = doc.StartPoint.CreateEditPoint();
+                    epEnd.MoveToLineAndOffset(endLine, endCol);
+                    epStart.ReplaceText(epEnd, replacement,
+                        (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
+                }
+                finally
+                {
+                    dte.UndoContext.Close();
+                }
+
+                ShowStatus(label + ": EXEC expandido.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(label + " (apply)", ex);
+                ShowStatus("falha em " + label + " — veja Output > SQL Beaver");
+            }
+        }
+
+        private static string FetchObjectDefinition(MetadataRequest request, string qualifiedName)
+        {
+            using (System.Data.IDbConnection connection = DefinitionService.OpenConnection(request))
+            {
+                connection.Open();
+                using (System.Data.IDbCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandTimeout = 15;
+                    cmd.CommandText = "SELECT OBJECT_DEFINITION(OBJECT_ID(@name))";
+                    System.Data.IDbDataParameter p = cmd.CreateParameter();
+                    p.ParameterName = "@name";
+                    p.Value = qualifiedName;
+                    cmd.Parameters.Add(p);
+                    object result = cmd.ExecuteScalar();
+                    return result != null && result != DBNull.Value ? result.ToString() : null;
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Encapsulate as procedure
+        // ---------------------------------------------------------------
+
+        public static void EncapsulateAsProcedure()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            const string label = "Encapsular como proc";
+            try
+            {
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus(label + ": nenhum documento ativo."); return; }
+
+                if (doc.Selection.IsEmpty)
+                {
+                    ShowStatus(label + ": selecione o trecho a encapsular.");
+                    return;
+                }
+
+                string fullText = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                string selUpToStart = doc.StartPoint.CreateEditPoint().GetText(doc.Selection.TopPoint);
+                int selStart = selUpToStart.Length;
+                int selLen = doc.Selection.Text.Length;
+
+                string schema, procName;
+                using (var dlg = new EncapsulateDialog())
+                {
+                    IntPtr hwnd;
+                    try { hwnd = new IntPtr((int)dte.MainWindow.HWnd); }
+                    catch { hwnd = IntPtr.Zero; }
+                    var owner = new NativeWindowWrapper(hwnd);
+                    if (dlg.ShowDialog(owner) != DialogResult.OK) return;
+                    schema = dlg.SchemaName;
+                    procName = dlg.ProcName;
+                }
+
+                if (string.IsNullOrWhiteSpace(procName)) { ShowStatus(label + ": nome inválido."); return; }
+
+                string proc = ProcEncapsulator.Build(fullText, selStart, selLen, schema, procName);
+                DefinitionService.OpenNewQueryWindow(proc);
+                ShowStatus(label + ": procedure gerada em nova janela.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(label, ex);
+                ShowStatus("falha em " + label + " — veja Output > SQL Beaver");
             }
         }
 
