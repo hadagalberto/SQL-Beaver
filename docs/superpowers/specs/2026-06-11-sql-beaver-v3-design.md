@@ -128,3 +128,4 @@ pendências consolidadas na última seção e reportadas ao usuário na entrega.
    Ctrl+K Ctrl+G (ir para definição) — reconfiguráveis; validar se não conflitam com hábitos do usuário.
 8. `confirmExecute=true` por padrão para o ambiente "Produção" do arquivo exemplo — confirmar se o
    comportamento (confirmar TODO execute em prod) é o desejado ou se deve valer só para statements perigosos.
+9. FindReferences usa apenas sys.sql_expression_dependencies (sem o fallback sys.sql_modules LIKE — referências em SQL dinâmico não aparecem); adicionar se sentir falta na prática.

@@ -165,7 +165,7 @@ namespace SqlBeaver.Session
                     string snapPath = Path.Combine(dir, snapFile);
                     File.WriteAllText(snapPath, text, Encoding.UTF8);
 
-                    // Upsert no índice e salva
+                    // Upsert no índice e salva atomicamente (write tmp → replace)
                     var entry = new SessionEntry
                     {
                         File        = snapFile,
@@ -178,7 +178,31 @@ namespace SqlBeaver.Session
 
                     entries = SessionIndex.Upsert(entries, entry);
                     string json = SessionIndex.Serialize(entries);
-                    File.WriteAllText(IndexPath, json, Encoding.UTF8);
+                    string indexTarget = IndexPath;
+                    string indexTmp    = indexTarget + ".tmp";
+                    File.WriteAllText(indexTmp, json, Encoding.UTF8);
+                    try
+                    {
+                        File.Replace(indexTmp, indexTarget, null);
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        // Target does not exist yet — plain move is safe
+                        File.Move(indexTmp, indexTarget);
+                    }
+
+                    // Delete orphan snap-*.sql files not referenced by any current entry
+                    var referencedFiles = new System.Collections.Generic.HashSet<string>(
+                        System.Linq.Enumerable.Select(entries, e => e.File),
+                        System.StringComparer.OrdinalIgnoreCase);
+                    foreach (string snapCandidate in Directory.GetFiles(dir, "snap-*.sql"))
+                    {
+                        string snapName = Path.GetFileName(snapCandidate);
+                        if (!referencedFiles.Contains(snapName))
+                        {
+                            try { File.Delete(snapCandidate); } catch { /* best-effort */ }
+                        }
+                    }
                 }
             }
             catch (Exception ex)

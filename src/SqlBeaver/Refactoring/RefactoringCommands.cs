@@ -48,10 +48,12 @@ namespace SqlBeaver.Refactoring
                 dte.UndoContext.Open("SQL Beaver Expand *");
                 try
                 {
+                    TextPosition.FromOffset(text, replacement.Start, out int startLine, out int startCol);
+                    TextPosition.FromOffset(text, replacement.Start + replacement.Length, out int endLine, out int endCol);
                     EditPoint epStart = doc.StartPoint.CreateEditPoint();
-                    epStart.MoveToAbsoluteOffset(replacement.Start + 1); // DTE is 1-based
+                    epStart.MoveToLineAndOffset(startLine, startCol);
                     EditPoint epEnd = doc.StartPoint.CreateEditPoint();
-                    epEnd.MoveToAbsoluteOffset(replacement.Start + replacement.Length + 1);
+                    epEnd.MoveToLineAndOffset(endLine, endCol);
                     epStart.ReplaceText(epEnd, replacement.NewText,
                         (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
                 }
@@ -240,13 +242,18 @@ namespace SqlBeaver.Refactoring
                 dte.UndoContext.Open("SQL Beaver Rename");
                 try
                 {
-                    // Apply edits descending (already sorted that way)
+                    // Apply edits descending (already sorted that way).
+                    // Positions are computed against capturedText (CRLF=2); convert to line/col
+                    // so DTE (CRLF=1) navigates correctly. Descending order keeps earlier
+                    // positions valid after each replacement.
                     foreach (TextReplacement edit in edits)
                     {
+                        TextPosition.FromOffset(text, edit.Start, out int startLine, out int startCol);
+                        TextPosition.FromOffset(text, edit.Start + edit.Length, out int endLine, out int endCol);
                         EditPoint epStart = doc.StartPoint.CreateEditPoint();
-                        epStart.MoveToAbsoluteOffset(edit.Start + 1);
+                        epStart.MoveToLineAndOffset(startLine, startCol);
                         EditPoint epEnd = doc.StartPoint.CreateEditPoint();
-                        epEnd.MoveToAbsoluteOffset(edit.Start + edit.Length + 1);
+                        epEnd.MoveToLineAndOffset(endLine, endCol);
                         epStart.ReplaceText(epEnd, edit.NewText,
                             (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
                     }

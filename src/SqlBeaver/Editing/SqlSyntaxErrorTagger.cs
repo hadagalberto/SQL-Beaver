@@ -29,10 +29,11 @@ namespace SqlBeaver.Editing
         private const int MaxDocumentLength = 200 * 1024;
         private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(750);
 
+        private sealed class ErrorEntry { public SnapshotSpan Span; public string Message; }
+
         private readonly ITextBuffer _buffer;
         private readonly DispatcherTimer _timer;
-        private IReadOnlyList<SnapshotSpan> _errorSpans = new List<SnapshotSpan>();
-        private IReadOnlyList<string> _errorMessages = new List<string>();
+        private volatile IReadOnlyList<ErrorEntry> _errors = new List<ErrorEntry>();
         private bool _parseQueued;
         private static bool _loggedTooBig;
 
@@ -60,8 +61,7 @@ namespace SqlBeaver.Editing
         {
             try
             {
-                var spans = new List<SnapshotSpan>();
-                var messages = new List<string>();
+                var entries = new List<ErrorEntry>();
 
                 if (snapshot.Length <= MaxDocumentLength)
                 {
@@ -74,8 +74,11 @@ namespace SqlBeaver.Editing
                         int length = Math.Max(1, Math.Min(snapshotLine.End.Position - start, 30));
                         if (start + length > snapshot.Length) length = Math.Max(1, snapshot.Length - start);
                         if (start >= snapshot.Length) continue;
-                        spans.Add(new SnapshotSpan(snapshot, start, length));
-                        messages.Add(error.Message);
+                        entries.Add(new ErrorEntry
+                        {
+                            Span = new SnapshotSpan(snapshot, start, length),
+                            Message = error.Message
+                        });
                     }
                 }
                 else if (!_loggedTooBig)
@@ -84,8 +87,8 @@ namespace SqlBeaver.Editing
                     Log.Info("Checagem de sintaxe pulada: documento acima de 200KB.");
                 }
 
-                _errorSpans = spans;
-                _errorMessages = messages;
+                // Single atomic publish
+                _errors = entries;
                 TagsChanged?.Invoke(this, new SnapshotSpanEventArgs(
                     new SnapshotSpan(snapshot, 0, snapshot.Length)));
             }
@@ -96,6 +99,10 @@ namespace SqlBeaver.Editing
             finally
             {
                 _parseQueued = false;
+                // If the buffer changed while we were parsing, requeue immediately
+                // so the last edit's errors are not silently dropped.
+                if (_buffer.CurrentSnapshot != snapshot)
+                    QueueParse();
             }
         }
 
@@ -124,12 +131,12 @@ namespace SqlBeaver.Editing
             if (requestedSpans.Count == 0) yield break;
             ITextSnapshot snapshot = requestedSpans[0].Snapshot;
 
-            IReadOnlyList<SnapshotSpan> spans = _errorSpans;
-            IReadOnlyList<string> messages = _errorMessages;
+            // Read the list once into a local — single atomic read of the volatile field.
+            IReadOnlyList<ErrorEntry> errors = _errors;
 
-            for (int i = 0; i < spans.Count; i++)
+            for (int i = 0; i < errors.Count; i++)
             {
-                SnapshotSpan span = spans[i];
+                SnapshotSpan span = errors[i].Span;
                 if (span.Snapshot != snapshot)
                 {
                     // traduz para o snapshot pedido (edições desde o parse)
@@ -137,7 +144,7 @@ namespace SqlBeaver.Editing
                 }
                 if (requestedSpans.IntersectsWith(new NormalizedSnapshotSpanCollection(span)))
                     yield return new TagSpan<IErrorTag>(span,
-                        new ErrorTag(PredefinedErrorTypeNames.SyntaxError, messages[i]));
+                        new ErrorTag(PredefinedErrorTypeNames.SyntaxError, errors[i].Message));
             }
         }
     }
