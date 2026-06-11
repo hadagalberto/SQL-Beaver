@@ -29,6 +29,7 @@ namespace SqlBeaver
             Grid.GridCommandBarMenu.Initialize();
             Grid.EditorCommandBarMenu.Initialize();
             Guard.ExecuteGuard.Initialize();
+            Session.SessionSnapshotService.Initialize();
 
             if (await GetServiceAsync(typeof(System.ComponentModel.Design.IMenuCommandService))
                 is System.ComponentModel.Design.IMenuCommandService menuService)
@@ -37,6 +38,8 @@ namespace SqlBeaver
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.FindObject, () => Commands.EditorCommands.FindObject());
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.GoToDefinition, () => Commands.EditorCommands.GoToDefinition());
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.FindReferences, () => Commands.EditorCommands.FindReferences());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.QueryHistory,   () => Commands.EditorCommands.QueryHistory());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.RecoverSession, () => Commands.EditorCommands.RecoverSession());
                 Log.Info("Comandos nomeados registrados (menu Tools > SQL Beaver, toolbar e atalhos).");
             }
             else

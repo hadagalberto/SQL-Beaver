@@ -25,6 +25,8 @@ namespace SqlBeaver.Grid
         private static CommandBarButton _goToDefinitionButton;
         private static CommandBarButton _findObjectButton;
         private static CommandBarButton _findReferencesButton;
+        private static CommandBarButton _queryHistoryButton;
+        private static CommandBarButton _recoverSessionButton;
 
         // Refactor submenu
         private static CommandBarPopup _refactorPopup;
@@ -53,6 +55,8 @@ namespace SqlBeaver.Grid
                 _goToDefinitionButton = AddButton(editorBar, "SQL Beaver: Ir para definição", OnGoToDefinition, beginGroup: true);
                 _findObjectButton = AddButton(editorBar, "SQL Beaver: Localizar objeto…", OnFindObject, beginGroup: false);
                 _findReferencesButton = AddButton(editorBar, "SQL Beaver: Localizar referências", OnFindReferences, beginGroup: false);
+                _queryHistoryButton   = AddButton(editorBar, "SQL Beaver: Histórico de consultas", OnQueryHistory,   beginGroup: true);
+                _recoverSessionButton = AddButton(editorBar, "SQL Beaver: Recuperar consultas…",   OnRecoverSession, beginGroup: false);
 
                 // Refactor submenu
                 _refactorPopup = (CommandBarPopup)editorBar.Controls.Add(
@@ -218,6 +222,18 @@ namespace SqlBeaver.Grid
                 Log.Error("Rename alias/variable", ex);
                 ShowStatus("falha em Rename — veja Output > SQL Beaver");
             }
+        }
+
+        private static void OnQueryHistory(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Commands.EditorCommands.QueryHistory();
+        }
+
+        private static void OnRecoverSession(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Commands.EditorCommands.RecoverSession();
         }
     }
 }

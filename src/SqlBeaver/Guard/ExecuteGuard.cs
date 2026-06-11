@@ -8,6 +8,7 @@ using SqlBeaver.Analysis;
 using SqlBeaver.Connection;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Environments;
+using SqlBeaver.Session;
 
 namespace SqlBeaver.Guard
 {
@@ -117,7 +118,8 @@ namespace SqlBeaver.Guard
                 }
                 else
                 {
-                    // Nenhuma condição de guarda ativa
+                    // Nenhuma condição de guarda ativa — grava histórico e retorna
+                    QueryHistoryService.Record(connection?.Server, connection?.Database, sql);
                     return;
                 }
 
@@ -149,6 +151,11 @@ namespace SqlBeaver.Guard
                     {
                         Log.Info($"Execução cancelada pelo guard: confirmação de ambiente recusada{envInfo}.");
                     }
+                }
+                else
+                {
+                    // Usuário confirmou — execução não cancelada — grava histórico
+                    QueryHistoryService.Record(connection?.Server, connection?.Database, sql);
                 }
             }
             catch (Exception ex)

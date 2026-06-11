@@ -4,6 +4,7 @@ using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Navigation;
+using SqlBeaver.Session;
 
 namespace SqlBeaver.Commands
 {
@@ -138,6 +139,34 @@ namespace SqlBeaver.Commands
             {
                 Log.Error("Localizar referências", ex);
                 ShowStatus("falha em Localizar referências — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void QueryHistory()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                QueryHistoryService.OpenTodayFile();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Histórico de consultas", ex);
+                ShowStatus("falha em Histórico de consultas — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void RecoverSession()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                SessionSnapshotService.ShowRecoveryDialog();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Recuperar consultas", ex);
+                ShowStatus("falha em Recuperar consultas — veja Output > SQL Beaver");
             }
         }
     }
