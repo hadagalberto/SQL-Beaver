@@ -56,11 +56,28 @@ namespace SqlBeaver.Linting
         {
             return new LintRuleSet(new ISqlLintRule[]
             {
+                // v1 — 5 regras originais
                 new Rules.SelectStarRule(),
                 new Rules.MissingSchemaRule(),
                 new Rules.NoLockRule(),
                 new Rules.InsertWithoutColumnsRule(),
                 new Rules.JoinWithoutOnRule(),
+                // v5 C7 — Lint II (15 regras novas)
+                new Rules.DeprecatedTypesRule(),
+                new Rules.VarcharNoLengthRule(),
+                new Rules.NullComparisonRule(),
+                new Rules.OrderByOrdinalRule(),
+                new Rules.TopWithoutOrderByRule(),
+                new Rules.DistinctWithGroupByRule(),
+                new Rules.SpPrefixRule(),
+                new Rules.NocountMissingRule(),
+                new Rules.NonSargableRule(),
+                new Rules.LikeLeadingWildcardRule(),
+                new Rules.ExecStringRule(),
+                new Rules.GotoRule(),
+                new Rules.CursorRule(),
+                new Rules.FloatForMoneyRule(),
+                new Rules.WaitForDelayRule(),
             });
         }
     }

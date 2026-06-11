@@ -64,6 +64,14 @@
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Inserir colunas…</ButtonText></Strings>
       </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidAnalyzeScript" priority="0x0109" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>Analisar script…</ButtonText></Strings>
+      </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidInvalidObjects" priority="0x010A" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>Objetos inválidos…</ButtonText></Strings>
+      </Button>
       <Button guid="guidSqlBeaverCmdSet" id="cmdidManageFormatStyles" priority="0x010D" type="Button">
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Gerenciar estilos de formatação…</ButtonText></Strings>
@@ -99,6 +107,12 @@
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidInsertColumns" priority="0x0108">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidAnalyzeScript" priority="0x0109">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidInvalidObjects" priority="0x010A">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidManageFormatStyles" priority="0x010D">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
@@ -128,6 +142,8 @@
       <IDSymbol name="cmdidEnvironments"         value="0x0106" />
       <IDSymbol name="cmdidRunCurrentStatement"  value="0x0107" />
       <IDSymbol name="cmdidInsertColumns"        value="0x0108" />
+      <IDSymbol name="cmdidAnalyzeScript"        value="0x0109" />
+      <IDSymbol name="cmdidInvalidObjects"       value="0x010A" />
       <IDSymbol name="cmdidManageFormatStyles"   value="0x010D" />
     </GuidSymbol>
   </Symbols>

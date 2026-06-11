@@ -316,6 +316,64 @@ namespace SqlBeaver.Commands
             }
         }
 
+        public static void AnalyzeScript()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus("Analisar script: nenhum documento ativo."); return; }
+
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                if (string.IsNullOrWhiteSpace(text)) { ShowStatus("Analisar script: documento vazio."); return; }
+
+                var parser = new Microsoft.SqlServer.TransactSql.ScriptDom.TSql160Parser(true);
+                System.Collections.Generic.IList<Microsoft.SqlServer.TransactSql.ScriptDom.ParseError> errors;
+                Microsoft.SqlServer.TransactSql.ScriptDom.TSqlFragment fragment;
+                using (var reader = new System.IO.StringReader(text))
+                    fragment = parser.Parse(reader, out errors);
+
+                if (errors != null && errors.Count > 0)
+                {
+                    var first = errors[0];
+                    ShowStatus("Analisar script: erro de sintaxe na linha " + first.Line + " — " + first.Message);
+                    return;
+                }
+
+                var ruleSet = Linting.LintRuleSet.CreateDefault();
+                System.Collections.Generic.IReadOnlyList<Linting.LintDiagnostic> diags =
+                    ruleSet.Inspect(fragment, Linting.LintSettingsStore.DisabledRuleIds);
+
+                string report = Linting.LintReportFormatter.Format(
+                    diags as System.Collections.Generic.IReadOnlyList<Linting.LintDiagnostic>
+                    ?? new System.Collections.Generic.List<Linting.LintDiagnostic>(diags));
+
+                Navigation.DefinitionService.OpenNewQueryWindow(report);
+                ShowStatus("análise concluída: " + diags.Count + " aviso(s).");
+                Log.Info("Analisar script: " + diags.Count + " diagnósticos.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Analisar script", ex);
+                ShowStatus("falha em Analisar script — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void InvalidObjects()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Navigation.InvalidObjectsService.Run();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Objetos inválidos", ex);
+                ShowStatus("falha em Objetos inválidos — veja Output > SQL Beaver");
+            }
+        }
+
         public static void ManageFormatStyles()
         {
             try

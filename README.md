@@ -67,15 +67,25 @@ própria janela de query.
 
 ### Lint ao vivo (avisos de qualidade)
 
-- Squiggles de aviso (verde) sobre o AST do ScriptDom para cinco regras configuráveis:
+- Squiggles de aviso (verde) sobre o AST do ScriptDom para **20 regras configuráveis**.
+  Regras originais:
   - **`select-star`** — `SELECT *`: recomenda listar colunas explicitamente.
   - **`missing-schema`** — tabela sem schema qualifier (ex.: `FROM T` → `FROM dbo.T`).
   - **`nolock`** — hints `NOLOCK` / `READUNCOMMITTED` que podem ler dados não confirmados.
   - **`insert-no-columns`** — `INSERT INTO T VALUES (...)` sem lista de colunas.
   - **`join-no-on`** — `INNER/LEFT/RIGHT JOIN` sem cláusula `ON`.
+  - 15 regras adicionais (Lint II): `deprecated-types` (TEXT/NTEXT/IMAGE), `varchar-no-length`,
+    `null-comparison` (`= NULL`), `order-by-ordinal`, `top-without-order-by`, `distinct-with-group-by`,
+    `sp-prefix`, `nocount-missing`, `non-sargable` (função sobre coluna no predicado),
+    `like-leading-wildcard` (`LIKE '%...'`), `exec-string` (EXEC de string dinâmica), `goto`, `cursor`,
+    `float-for-money` (FLOAT/REAL em coluna/variável monetária) e `waitfor-delay`.
 - Só emite avisos em documentos sem erros de sintaxe (o tagger de sintaxe cuida do resto).
 - Regras configuráveis via `%LOCALAPPDATA%\SqlBeaver\lint.json`
   (criado automaticamente na primeira execução com `"disabledRules": []`).
+- **Analisar script…** (menu Tools > SQL Beaver e toolbar): roda todas as regras no documento ativo e
+  abre um relatório agrupado por regra em uma nova janela de query (salvável).
+- **Objetos inválidos…**: consulta `sys.sql_expression_dependencies` em background e lista os objetos com
+  referências quebradas (`schema.objeto → referência quebrada 'X'`) em uma nova janela.
 
 ### Auto-uppercase de keywords
 
