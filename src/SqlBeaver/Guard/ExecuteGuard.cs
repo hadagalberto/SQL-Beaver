@@ -1,16 +1,20 @@
 using System;
+using System.Collections.Generic;
 using System.Windows.Forms;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using SqlBeaver.Analysis;
+using SqlBeaver.Connection;
 using SqlBeaver.Diagnostics;
+using SqlBeaver.Environments;
 
 namespace SqlBeaver.Guard
 {
-    /// <summary>Confirma antes de executar DELETE/UPDATE sem WHERE. Intercepta o comando
-    /// de Execute do SSMS via DTE.CommandEvents; se o comando não for encontrado, a
-    /// feature fica desabilitada (log) sem afetar o resto da extensão.</summary>
+    /// <summary>Confirma antes de executar: (a) sempre, quando o ambiente tem
+    /// confirmExecute=true; (b) somente DELETE/UPDATE sem WHERE nos demais casos.
+    /// Intercepta o comando de Execute do SSMS via DTE.CommandEvents; se o comando
+    /// não for encontrado, a feature fica desabilitada (log) sem afetar o resto da extensão.</summary>
     internal static class ExecuteGuard
     {
         // Refs fortes: eventos COM são coletados pelo GC sem isso.
@@ -67,13 +71,55 @@ namespace SqlBeaver.Guard
                     ? doc.Selection.Text
                     : doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
 
-                var dangers = DangerousStatementDetector.Find(sql);
-                if (dangers.Count == 0) return;
+                // Resolve conexão e regra de ambiente
+                ActiveConnection connection = ConnectionService.GetActiveConnection();
+                EnvironmentRule env = connection == null
+                    ? null
+                    : EnvironmentStore.MatchActive(connection.Server, connection.Database);
 
-                var first = dangers[0];
-                string message = dangers.Count == 1
-                    ? $"{first.Keyword} sem WHERE na linha {first.Line}.\r\n\r\nExecutar mesmo assim?"
-                    : $"{dangers.Count} statements sem WHERE (primeiro: {first.Keyword} na linha {first.Line}).\r\n\r\nExecutar mesmo assim?";
+                IReadOnlyList<DangerousStatement> dangers = DangerousStatementDetector.Find(sql);
+
+                string message;
+                string title;
+
+                if (env?.ConfirmExecute == true)
+                {
+                    // Ambiente de produção (ou com confirmExecute=true): sempre confirma
+                    title = $"SQL Beaver — {env.Name}";
+
+                    string envHeader = $"Você está em {env.Name.ToUpperInvariant()}\r\n" +
+                                       $"{connection.Server} · {connection.Database}\r\n\r\n";
+
+                    string dangerDetail = string.Empty;
+                    if (dangers.Count > 0)
+                    {
+                        var first = dangers[0];
+                        dangerDetail = dangers.Count == 1
+                            ? $"ATENÇÃO: {first.Keyword} sem WHERE na linha {first.Line}.\r\n\r\n"
+                            : $"ATENÇÃO: {dangers.Count} statements sem WHERE (primeiro: {first.Keyword} na linha {first.Line}).\r\n\r\n";
+                    }
+
+                    message = envHeader + dangerDetail + "Executar mesmo assim?";
+                }
+                else if (dangers.Count > 0)
+                {
+                    // Sem confirmExecute: comportamento original (só perigos), com nome do ambiente se classificado
+                    title = "SQL Beaver — atenção";
+
+                    var first = dangers[0];
+                    string dangerText = dangers.Count == 1
+                        ? $"{first.Keyword} sem WHERE na linha {first.Line}.\r\n\r\nExecutar mesmo assim?"
+                        : $"{dangers.Count} statements sem WHERE (primeiro: {first.Keyword} na linha {first.Line}).\r\n\r\nExecutar mesmo assim?";
+
+                    message = env != null
+                        ? $"Ambiente: {env.Name}\r\n{dangerText}"
+                        : dangerText;
+                }
+                else
+                {
+                    // Nenhuma condição de guarda ativa
+                    return;
+                }
 
                 var owner = new NativeWindow();
                 owner.AssignHandle((System.IntPtr)(int)dte.MainWindow.HWnd);
@@ -82,7 +128,7 @@ namespace SqlBeaver.Guard
                 {
                     choice = MessageBox.Show(
                         owner,
-                        message, "SQL Beaver — atenção",
+                        message, title,
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
                 }
                 finally
@@ -93,7 +139,16 @@ namespace SqlBeaver.Guard
                 if (choice != DialogResult.Yes)
                 {
                     cancelDefault = true;
-                    Log.Info($"Execução cancelada pelo guard: {first.Keyword} sem WHERE na linha {first.Line}.");
+                    string envInfo = env != null ? $" (ambiente: {env.Name})" : string.Empty;
+                    if (dangers.Count > 0)
+                    {
+                        var first = dangers[0];
+                        Log.Info($"Execução cancelada pelo guard: {first.Keyword} sem WHERE na linha {first.Line}{envInfo}.");
+                    }
+                    else
+                    {
+                        Log.Info($"Execução cancelada pelo guard: confirmação de ambiente recusada{envInfo}.");
+                    }
                 }
             }
             catch (Exception ex)
