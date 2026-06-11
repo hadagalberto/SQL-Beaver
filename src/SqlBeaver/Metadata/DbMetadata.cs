@@ -21,6 +21,8 @@ namespace SqlBeaver.Metadata
             new Dictionary<string, IReadOnlyList<ColumnEntry>>();
         private static readonly IReadOnlyDictionary<string, IReadOnlyList<ForeignKeyEntry>> EmptyForeignKeys =
             new Dictionary<string, IReadOnlyList<ForeignKeyEntry>>();
+        private static readonly IReadOnlyList<ObjectEntry> EmptyObjects =
+            new ObjectEntry[0];
 
         public IReadOnlyList<string> Schemas { get; }
         public IReadOnlyList<TableEntry> Tables { get; }
@@ -28,6 +30,8 @@ namespace SqlBeaver.Metadata
         public IReadOnlyDictionary<string, IReadOnlyList<ColumnEntry>> ColumnsByTable { get; }
         /// <summary>FKs indexadas nas DUAS pontas (a mesma entrada aparece na chave From e na To).</summary>
         public IReadOnlyDictionary<string, IReadOnlyList<ForeignKeyEntry>> ForeignKeysByTable { get; }
+        /// <summary>Objetos do banco (procedures, views, functions) excluindo tabelas e sys.</summary>
+        public IReadOnlyList<ObjectEntry> Objects { get; }
 
         public DbMetadata(IReadOnlyList<string> schemas, IReadOnlyList<TableEntry> tables)
             : this(schemas, tables, EmptyColumns, EmptyForeignKeys)
@@ -39,11 +43,22 @@ namespace SqlBeaver.Metadata
             IReadOnlyList<TableEntry> tables,
             IReadOnlyDictionary<string, IReadOnlyList<ColumnEntry>> columnsByTable,
             IReadOnlyDictionary<string, IReadOnlyList<ForeignKeyEntry>> foreignKeysByTable)
+            : this(schemas, tables, columnsByTable, foreignKeysByTable, EmptyObjects)
+        {
+        }
+
+        public DbMetadata(
+            IReadOnlyList<string> schemas,
+            IReadOnlyList<TableEntry> tables,
+            IReadOnlyDictionary<string, IReadOnlyList<ColumnEntry>> columnsByTable,
+            IReadOnlyDictionary<string, IReadOnlyList<ForeignKeyEntry>> foreignKeysByTable,
+            IReadOnlyList<ObjectEntry> objects)
         {
             Schemas = schemas;
             Tables = tables;
             ColumnsByTable = columnsByTable;
             ForeignKeysByTable = foreignKeysByTable;
+            Objects = objects ?? EmptyObjects;
         }
 
         public static string TableKey(string schema, string table) => schema + "." + table;

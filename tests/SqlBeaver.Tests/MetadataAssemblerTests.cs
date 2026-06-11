@@ -91,5 +91,66 @@ namespace SqlBeaver.Tests
             Assert.Equal(2, md.Tables.Count);
             Assert.Equal(2, md.Schemas.Count);
         }
+
+        // --- ObjectEntry / Objects tests ---
+
+        [Fact]
+        public void Objects_AreMappedWithCorrectTypes()
+        {
+            var objectRows = new List<MetadataAssembler.ObjectRow>
+            {
+                new MetadataAssembler.ObjectRow("dbo", "usp_GetPessoa", "P"),
+                new MetadataAssembler.ObjectRow("dbo", "vw_Relatorio",  "V"),
+                new MetadataAssembler.ObjectRow("dbo", "fn_Calc",       "FN"),
+                new MetadataAssembler.ObjectRow("dbo", "tvf_Lista",     "IF"),
+                new MetadataAssembler.ObjectRow("dbo", "tvf_Lista2",    "TF"),
+            };
+
+            DbMetadata md = MetadataAssembler.Assemble(Tables, Schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>(),
+                objectRows);
+
+            Assert.Equal(5, md.Objects.Count);
+            Assert.Equal(DbObjectType.Procedure,      md.Objects[0].Type);
+            Assert.Equal(DbObjectType.View,           md.Objects[1].Type);
+            Assert.Equal(DbObjectType.ScalarFunction, md.Objects[2].Type);
+            Assert.Equal(DbObjectType.TableFunction,  md.Objects[3].Type);
+            Assert.Equal(DbObjectType.TableFunction,  md.Objects[4].Type);
+            Assert.Equal("dbo",         md.Objects[0].Schema);
+            Assert.Equal("usp_GetPessoa", md.Objects[0].Name);
+        }
+
+        [Fact]
+        public void Objects_UnknownTypeCode_IsSkipped()
+        {
+            var objectRows = new List<MetadataAssembler.ObjectRow>
+            {
+                new MetadataAssembler.ObjectRow("dbo", "usp_Known",   "P"),
+                new MetadataAssembler.ObjectRow("dbo", "obj_Unknown", "X"),  // deve ser ignorado
+            };
+
+            DbMetadata md = MetadataAssembler.Assemble(Tables, Schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>(),
+                objectRows);
+
+            Assert.Single(md.Objects);
+            Assert.Equal("usp_Known", md.Objects[0].Name);
+        }
+
+        [Fact]
+        public void CompatCtors_Objects_IsEmpty()
+        {
+            // ctor 2-param
+            var md2 = new DbMetadata(Schemas, Tables);
+            Assert.Empty(md2.Objects);
+
+            // ctor 4-param (via 4-arg Assemble)
+            DbMetadata md4 = MetadataAssembler.Assemble(Tables, Schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>());
+            Assert.Empty(md4.Objects);
+        }
     }
 }

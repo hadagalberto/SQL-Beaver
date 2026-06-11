@@ -42,11 +42,34 @@ namespace SqlBeaver.Metadata
             }
         }
 
+        public sealed class ObjectRow
+        {
+            public string Schema { get; }
+            public string Name { get; }
+            /// <summary>"P"=Procedure, "V"=View, "FN"=ScalarFunction, "IF"/"TF"=TableFunction</summary>
+            public string TypeCode { get; }
+
+            public ObjectRow(string schema, string name, string typeCode)
+            {
+                Schema = schema;
+                Name = name;
+                TypeCode = typeCode;
+            }
+        }
+
         public static DbMetadata Assemble(
             IReadOnlyList<TableEntry> tables,
             IReadOnlyList<string> schemas,
             IReadOnlyList<ColumnRow> columnRows,
             IReadOnlyList<ForeignKeyColumnRow> foreignKeyRows)
+            => Assemble(tables, schemas, columnRows, foreignKeyRows, new ObjectRow[0]);
+
+        public static DbMetadata Assemble(
+            IReadOnlyList<TableEntry> tables,
+            IReadOnlyList<string> schemas,
+            IReadOnlyList<ColumnRow> columnRows,
+            IReadOnlyList<ForeignKeyColumnRow> foreignKeyRows,
+            IReadOnlyList<ObjectRow> objectRows)
         {
             var columnsByTable = new Dictionary<string, IReadOnlyList<ColumnEntry>>(StringComparer.OrdinalIgnoreCase);
             var columnBuckets = new Dictionary<string, List<ColumnEntry>>(StringComparer.OrdinalIgnoreCase);
@@ -88,7 +111,23 @@ namespace SqlBeaver.Metadata
                     AddFk(fkBuckets, foreignKeysByTable, toKey, entry); // auto-referência indexa uma vez só
             }
 
-            return new DbMetadata(schemas, tables, columnsByTable, foreignKeysByTable);
+            var objects = new List<ObjectEntry>();
+            foreach (ObjectRow row in objectRows)
+            {
+                DbObjectType type;
+                switch (row.TypeCode)
+                {
+                    case "P":  type = DbObjectType.Procedure;      break;
+                    case "V":  type = DbObjectType.View;           break;
+                    case "FN": type = DbObjectType.ScalarFunction; break;
+                    case "IF":
+                    case "TF": type = DbObjectType.TableFunction;  break;
+                    default:   continue; // código desconhecido: ignorado
+                }
+                objects.Add(new ObjectEntry(row.Schema, row.Name, type));
+            }
+
+            return new DbMetadata(schemas, tables, columnsByTable, foreignKeysByTable, objects);
         }
 
         private static void AddFk(

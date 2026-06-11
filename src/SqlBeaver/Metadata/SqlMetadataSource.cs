@@ -62,7 +62,13 @@ JOIN sys.columns AS cf ON cf.object_id = fkc.parent_object_id AND cf.column_id =
 JOIN sys.tables AS tt ON tt.object_id = fkc.referenced_object_id
 JOIN sys.schemas AS st ON st.schema_id = tt.schema_id
 JOIN sys.columns AS ct ON ct.object_id = fkc.referenced_object_id AND ct.column_id = fkc.referenced_column_id
-ORDER BY fk.object_id, fkc.constraint_column_id;";
+ORDER BY fk.object_id, fkc.constraint_column_id;
+
+SELECT s.name, o.name, RTRIM(o.type)
+FROM sys.objects AS o
+JOIN sys.schemas AS s ON s.schema_id = o.schema_id
+WHERE o.type IN ('P', 'V', 'FN', 'IF', 'TF') AND o.is_ms_shipped = 0
+ORDER BY s.name, o.name;";
 
         public Task<DbMetadata> LoadAsync(MetadataRequest request, CancellationToken cancellationToken)
         {
@@ -120,6 +126,7 @@ ORDER BY fk.object_id, fkc.constraint_column_id;";
             var schemas = new List<string>();
             var columnRows = new List<MetadataAssembler.ColumnRow>();
             var fkRows = new List<MetadataAssembler.ForeignKeyColumnRow>();
+            var objectRows = new List<MetadataAssembler.ObjectRow>();
 
             while (reader.Read())
                 tables.Add(new TableEntry(reader.GetString(0), reader.GetString(1)));
@@ -141,9 +148,14 @@ ORDER BY fk.object_id, fkc.constraint_column_id;";
                     reader.GetString(1), reader.GetString(2), reader.GetString(3),
                     reader.GetString(4), reader.GetString(5), reader.GetString(6)));
 
-            DbMetadata metadata = MetadataAssembler.Assemble(tables, schemas, columnRows, fkRows);
+            reader.NextResult();
+            while (reader.Read())
+                objectRows.Add(new MetadataAssembler.ObjectRow(
+                    reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+
+            DbMetadata metadata = MetadataAssembler.Assemble(tables, schemas, columnRows, fkRows, objectRows);
             Log.Info($"Metadata carregada: {metadata.Schemas.Count} schema(s), {metadata.Tables.Count} tabela(s), " +
-                     $"{columnRows.Count} coluna(s), {fkRows.Count} linha(s) de FK.");
+                     $"{columnRows.Count} coluna(s), {fkRows.Count} linha(s) de FK, {objectRows.Count} objeto(s).");
             return metadata;
         }
     }

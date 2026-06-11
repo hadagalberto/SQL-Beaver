@@ -6,6 +6,7 @@ using Microsoft.VisualStudio.Shell;
 using SqlBeaver.Connection;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Metadata;
+using SqlBeaver.Navigation;
 
 namespace SqlBeaver.Grid
 {
@@ -21,6 +22,9 @@ namespace SqlBeaver.Grid
         // Referências fortes: handlers COM são coletados pelo GC sem isso.
         private static CommandBarButton _formatButton;
         private static CommandBarButton _refreshCacheButton;
+        private static CommandBarButton _goToDefinitionButton;
+        private static CommandBarButton _findObjectButton;
+        private static CommandBarButton _findReferencesButton;
 
         public static void Initialize()
         {
@@ -39,6 +43,9 @@ namespace SqlBeaver.Grid
 
                 _formatButton = AddButton(editorBar, "SQL Beaver: Format Document", OnFormatDocument, beginGroup: true);
                 _refreshCacheButton = AddButton(editorBar, "SQL Beaver: Refresh metadata cache", OnRefreshCache, beginGroup: false);
+                _goToDefinitionButton = AddButton(editorBar, "SQL Beaver: Ir para definição", OnGoToDefinition, beginGroup: true);
+                _findObjectButton = AddButton(editorBar, "SQL Beaver: Localizar objeto…", OnFindObject, beginGroup: false);
+                _findReferencesButton = AddButton(editorBar, "SQL Beaver: Localizar referências", OnFindReferences, beginGroup: false);
 
                 Log.Info("Comandos registrados no menu de contexto do editor SQL.");
             }
@@ -173,6 +180,48 @@ namespace SqlBeaver.Grid
             {
                 Log.Error("Refresh metadata cache", ex);
                 ShowStatus("falha no refresh do cache — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnGoToDefinition(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                DefinitionService.GoToDefinition();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ir para definição", ex);
+                ShowStatus("falha em Ir para definição — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnFindObject(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                FindObjectDialog.Show();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Localizar objeto", ex);
+                ShowStatus("falha em Localizar objeto — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnFindReferences(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                DefinitionService.FindReferences();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Localizar referências", ex);
+                ShowStatus("falha em Localizar referências — veja Output > SQL Beaver");
             }
         }
     }
