@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using SqlBeaver.Analysis;
 using SqlBeaver.Metadata;
+using SqlBeaver.Usage;
 
 namespace SqlBeaver.Scripting
 {
@@ -11,12 +12,15 @@ namespace SqlBeaver.Scripting
         public string DisplayText { get; }
         public string InsertText { get; }
         public string FilterText { get; }
+        /// <summary>Chave canônica do par (UsageRanker.PairKey) para ranking por uso.</summary>
+        public string PairKey { get; }
 
-        public FkJoinSuggestion(string displayText, string insertText, string filterText)
+        public FkJoinSuggestion(string displayText, string insertText, string filterText, string pairKey)
         {
             DisplayText = displayText;
             InsertText = insertText;
             FilterText = filterText;
+            PairKey = pairKey;
         }
     }
 
@@ -97,7 +101,8 @@ namespace SqlBeaver.Scripting
                         continue;
 
                     bool isSameSchema = string.Equals(otherSchema, scopeTable.Schema, StringComparison.OrdinalIgnoreCase);
-                    var suggestion = new FkJoinSuggestion(displayText, insertText, otherTable);
+                    string pairKey = UsageRanker.PairKey(scopeTable.Key, otherKey);
+                    var suggestion = new FkJoinSuggestion(displayText, insertText, otherTable, pairKey);
                     if (isSameSchema)
                         sameSchema.Add(suggestion);
                     else

@@ -3,6 +3,7 @@ using System.Linq;
 using SqlBeaver.Analysis;
 using SqlBeaver.Metadata;
 using SqlBeaver.Scripting;
+using SqlBeaver.Usage;
 using Xunit;
 
 namespace SqlBeaver.Tests
@@ -143,6 +144,17 @@ namespace SqlBeaver.Tests
             Assert.Equal(2, suggestions.Count);
             Assert.StartsWith("Cadastro.PessoasFisicas", suggestions[0].InsertText);  // mesmo schema primeiro
             Assert.StartsWith("Financeiro.Titulos", suggestions[1].InsertText);
+        }
+
+        [Fact]
+        public void Suggestion_PairKey_IsPresentAndCanonical()
+        {
+            // PairKey deve ser a chave canônica do par (menor primeiro, case-insensitive)
+            var scope = new List<TableRef> { new TableRef("Cadastro", "Pessoas", "p") };
+            var s = Assert.Single(FkJoinSuggestionBuilder.Build(scope, Metadata(TitulosToPessoas)));
+
+            string expected = UsageRanker.PairKey("Cadastro.Pessoas", "Financeiro.Titulos");
+            Assert.Equal(expected, s.PairKey, ignoreCase: true);
         }
     }
 }
