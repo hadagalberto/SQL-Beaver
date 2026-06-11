@@ -81,9 +81,17 @@ namespace SqlBeaver.Completion
         private bool _loggedContentType;
         private static bool _loggedFirstItems;
 
+        // Diagnóstico: contador global de instâncias. Se aparecer #1 E #2 nos logs,
+        // há mais de uma extensão SQL Beaver carregada (instalação duplicada) — duas
+        // fontes de completion competindo quebram o span de filtragem.
+        private static int _instanceCounter;
+        private readonly int _instanceId;
+
         public SqlBeaverCompletionSource(MetadataCache cache)
         {
             _cache = cache;
+            _instanceId = System.Threading.Interlocked.Increment(ref _instanceCounter);
+            Log.Info($"[completion] fonte criada — instância #{_instanceId} (total de instâncias: {_instanceCounter}).");
         }
 
         // Chamado na thread de UI a cada tecla; precisa ser rápido.
@@ -126,7 +134,7 @@ namespace SqlBeaver.Completion
             }
             catch (Exception ex)
             {
-                Log.Error("InitializeCompletion", ex);
+                Log.Error($"[completion] #{_instanceId} InitializeCompletion", ex);
                 return CompletionStartData.DoesNotParticipateInCompletion;
             }
         }
@@ -153,14 +161,14 @@ namespace SqlBeaver.Completion
                 if (!_loggedFirstItems)
                 {
                     _loggedFirstItems = true;
-                    Log.Info($"Completion: contexto={context.Kind}, parcial='{context.Partial}', {items.Length} item(ns), db={connection.Database}.");
+                    Log.Info($"[completion] #{_instanceId} primeiro popup: contexto={context.Kind}, parcial='{context.Partial}', {items.Length} item(ns), db={connection.Database}.");
                 }
 
                 return Task.FromResult(new CompletionContext(items));
             }
             catch (Exception ex)
             {
-                Log.Error("GetCompletionContextAsync", ex);
+                Log.Error($"[completion] #{_instanceId} GetCompletionContextAsync", ex);
                 return Task.FromResult(CompletionContext.Empty);
             }
         }
