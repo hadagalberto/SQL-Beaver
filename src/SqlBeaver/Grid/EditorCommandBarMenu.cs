@@ -31,6 +31,13 @@ namespace SqlBeaver.Grid
 
         private static CommandBarButton _insertColumnsButton;
 
+        // Format style submenu
+        private static CommandBarPopup _formatStylePopup;
+        private static CommandBarButton _manageStylesButton;
+        // Dynamic style items — kept as a list so we can clear/rebuild
+        private static readonly System.Collections.Generic.List<CommandBarButton> _styleButtons =
+            new System.Collections.Generic.List<CommandBarButton>();
+
         // Refactor submenu
         private static CommandBarPopup _refactorPopup;
         private static CommandBarButton _expandWildcardButton;
@@ -68,6 +75,18 @@ namespace SqlBeaver.Grid
                 _recoverSessionButton = AddButton(editorBar, "SQL Beaver: Recuperar consultas…",   OnRecoverSession, beginGroup: false);
                 _environmentsButton   = AddButton(editorBar, "SQL Beaver: Ambientes (cores)…",     OnEnvironments,   beginGroup: false);
                 _insertColumnsButton  = AddButton(editorBar, "SQL Beaver: Inserir colunas…",        OnInsertColumns,  beginGroup: true);
+
+                // Format style submenu
+                _formatStylePopup = (CommandBarPopup)editorBar.Controls.Add(
+                    MsoControlType.msoControlPopup, Type.Missing, Type.Missing, Type.Missing, /*temporary:*/ true);
+                _formatStylePopup.Caption    = "SQL Beaver: Estilo de formatação";
+                _formatStylePopup.BeginGroup = true;
+
+                // "Gerenciar estilos…" is always present at the top of the popup
+                _manageStylesButton = AddButton(_formatStylePopup, "Gerenciar estilos…", OnManageFormatStyles, beginGroup: false);
+
+                // Populate dynamic style items now (and rebuild every time popup opens)
+                RebuildStyleItems(_formatStylePopup);
 
                 // Refactor submenu
                 _refactorPopup = (CommandBarPopup)editorBar.Controls.Add(
@@ -354,6 +373,87 @@ namespace SqlBeaver.Grid
             {
                 Log.Error("Inserir colunas", ex);
                 ShowStatus("falha em Inserir colunas — veja Output > SQL Beaver");
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Format style submenu
+        // ---------------------------------------------------------------
+
+        private static void OnManageFormatStyles(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Commands.EditorCommands.ManageFormatStyles();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Gerenciar estilos de formatação", ex);
+                ShowStatus("falha ao abrir gerenciador de estilos — veja Output > SQL Beaver");
+            }
+        }
+
+        /// <summary>
+        /// Reconstrói os itens dinâmicos do popup de estilos.
+        /// Remove os itens antigos (preserva o botão fixo "Gerenciar estilos…") e
+        /// adiciona um botão por estilo disponível, marcando o ativo com "● ".
+        /// </summary>
+        private static void RebuildStyleItems(CommandBarPopup popup)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            // Remove previously created dynamic buttons (they are temporary COM controls)
+            foreach (CommandBarButton old in _styleButtons)
+            {
+                try { old.Delete(); } catch { /* ignore COM errors on stale items */ }
+            }
+            _styleButtons.Clear();
+
+            try
+            {
+                System.Collections.Generic.IReadOnlyList<string> styles =
+                    Formatting.FormatStyleStore.ListStyles();
+                string active = Formatting.FormatStyleStore.ActiveStyleName;
+
+                if (styles.Count == 0)
+                    return;
+
+                foreach (string styleName in styles)
+                {
+                    string name = styleName; // capture for closure
+                    string caption = string.Equals(name, active, StringComparison.OrdinalIgnoreCase)
+                        ? "● " + name
+                        : "    " + name;
+
+                    var btn = (CommandBarButton)popup.Controls.Add(
+                        MsoControlType.msoControlButton, Type.Missing, Type.Missing, Type.Missing, /*temporary:*/ true);
+                    btn.Caption    = caption;
+                    btn.BeginGroup = (_styleButtons.Count == 0); // separator before the first style item
+
+                    // Use a local lambda — CommandBar buttons require a field ref for click handler,
+                    // but we store each button anyway to keep the COM reference alive.
+                    btn.Click += (CommandBarButton b, ref bool cancel) =>
+                    {
+                        try
+                        {
+                            ThreadHelper.ThrowIfNotOnUIThread();
+                            Commands.EditorCommands.SetFormatStyle(name);
+                            // Rebuild so the active marker updates immediately
+                            RebuildStyleItems(popup);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error("Trocar estilo de formatação", ex);
+                        }
+                    };
+
+                    _styleButtons.Add(btn);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("RebuildStyleItems", ex);
             }
         }
     }

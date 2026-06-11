@@ -45,6 +45,7 @@ namespace SqlBeaver
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.Environments,        () => Commands.EditorCommands.Environments());
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.RunCurrentStatement, () => Commands.EditorCommands.RunCurrentStatement());
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.InsertColumns,       () => Commands.EditorCommands.InsertColumns());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.ManageFormatStyles,  () => Commands.EditorCommands.ManageFormatStyles());
                 Log.Info("Comandos nomeados registrados (menu Tools > SQL Beaver, toolbar e atalhos).");
             }
             else

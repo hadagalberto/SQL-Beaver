@@ -17,5 +17,6 @@ namespace SqlBeaver.Commands
         public const int Environments        = 0x0106;
         public const int RunCurrentStatement = 0x0107;
         public const int InsertColumns       = 0x0108;
+        public const int ManageFormatStyles  = 0x010D;
     }
 }

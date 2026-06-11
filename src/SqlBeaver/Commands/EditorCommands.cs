@@ -40,7 +40,8 @@ namespace SqlBeaver.Commands
 
                 if (string.IsNullOrWhiteSpace(original)) { ShowStatus("Format: nada para formatar."); return; }
 
-                if (!Formatting.SqlFormatterService.TryFormat(original, out string formatted, out string error, out bool containsComments))
+                Formatting.FormatOptions activeOptions = Formatting.FormatStyleStore.GetActiveOptions();
+                if (!Formatting.SqlFormatterService.TryFormat(original, activeOptions, out string formatted, out string error, out bool containsComments))
                 {
                     ShowStatus("não formatado: " + error);
                     Log.Info("Format Document abortado: " + error);
@@ -312,6 +313,39 @@ namespace SqlBeaver.Commands
             {
                 Log.Error("Executar statement atual", ex);
                 ShowStatus("falha em Executar statement atual — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void ManageFormatStyles()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                IntPtr hwnd;
+                try { hwnd = new IntPtr((int)dte.MainWindow.HWnd); }
+                catch { hwnd = IntPtr.Zero; }
+                var owner = new NativeWindowWrapper(hwnd);
+                Formatting.ManageFormatStylesDialog.ShowManager(owner);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Gerenciar estilos de formatação", ex);
+                ShowStatus("falha ao abrir gerenciador de estilos — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void SetFormatStyle(string styleName)
+        {
+            try
+            {
+                Formatting.FormatStyleStore.SetActive(styleName);
+                ShowStatus($"estilo de formatação ativo: {styleName}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Trocar estilo de formatação", ex);
+                ShowStatus("falha ao trocar estilo — veja Output > SQL Beaver");
             }
         }
 

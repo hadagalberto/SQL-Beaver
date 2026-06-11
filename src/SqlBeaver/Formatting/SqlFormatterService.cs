@@ -7,11 +7,11 @@ namespace SqlBeaver.Formatting
     public static class SqlFormatterService
     {
         /// <summary>
-        /// Formata usando as opções persistidas em
-        /// %LOCALAPPDATA%\SqlBeaver\format.json (via <see cref="FormatOptionsStore"/>).
+        /// Formata usando as opções do estilo ATIVO (via <see cref="FormatStyleStore"/>).
+        /// Fallback para defaults se nenhum estilo estiver configurado.
         /// </summary>
         public static bool TryFormat(string sql, out string formatted, out string error, out bool containsComments)
-            => TryFormat(sql, FormatOptionsStore.Options, out formatted, out error, out containsComments);
+            => TryFormat(sql, FormatStyleStore.GetActiveOptions(), out formatted, out error, out containsComments);
 
         /// <summary>
         /// Formata usando as <paramref name="options"/> fornecidas.

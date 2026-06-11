@@ -79,7 +79,35 @@ namespace SqlBeaver.Formatting
         [DataMember(Name = "multilineViewColumnsList")]
         public bool MultilineViewColumnsList { get; set; }
 
-        // ── Factory / Load ────────────────────────────────────────────────────
+        // ── Factory / Load / Save ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Serializa esta instância para JSON no mesmo formato que o arquivo format.json.
+        /// </summary>
+        public string Serialize()
+        {
+            return
+                "{\r\n" +
+                $"  \"keywordCasing\": \"{(KeywordCasing ?? "uppercase").Replace("\\", "\\\\").Replace("\"", "\\\"")}\",\r\n" +
+                $"  \"indentationSize\": {IndentationSize},\r\n" +
+                $"  \"alignClauseBodies\": {AlignClauseBodies.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"asKeywordOnOwnLine\": {AsKeywordOnOwnLine.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"includeSemicolons\": {IncludeSemicolons.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"indentSetClause\": {IndentSetClause.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"newLineBeforeFromClause\": {NewLineBeforeFromClause.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"newLineBeforeWhereClause\": {NewLineBeforeWhereClause.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"newLineBeforeGroupByClause\": {NewLineBeforeGroupByClause.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"newLineBeforeOrderByClause\": {NewLineBeforeOrderByClause.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"newLineBeforeHavingClause\": {NewLineBeforeHavingClause.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"newLineBeforeJoinClause\": {NewLineBeforeJoinClause.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"newLineBeforeOpenParenthesisInMultilineList\": {NewLineBeforeOpenParenthesisInMultilineList.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"newLineBeforeCloseParenthesisInMultilineList\": {NewLineBeforeCloseParenthesisInMultilineList.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"multilineSelectElementsList\": {MultilineSelectElementsList.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"multilineInsertSourcesList\": {MultilineInsertSourcesList.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"multilineWherePredicatesList\": {MultilineWherePredicatesList.ToString().ToLowerInvariant()},\r\n" +
+                $"  \"multilineViewColumnsList\": {MultilineViewColumnsList.ToString().ToLowerInvariant()}\r\n" +
+                "}\r\n";
+        }
 
         /// <summary>Retorna uma instância com todos os defaults aplicados.</summary>
         public static FormatOptions CreateDefault() => new FormatOptions

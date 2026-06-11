@@ -64,6 +64,10 @@
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Inserir colunas…</ButtonText></Strings>
       </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidManageFormatStyles" priority="0x010D" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>Gerenciar estilos de formatação…</ButtonText></Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -95,6 +99,9 @@
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidInsertColumns" priority="0x0108">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidManageFormatStyles" priority="0x010D">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
   </CommandPlacements>
 
   <KeyBindings>
@@ -121,6 +128,7 @@
       <IDSymbol name="cmdidEnvironments"         value="0x0106" />
       <IDSymbol name="cmdidRunCurrentStatement"  value="0x0107" />
       <IDSymbol name="cmdidInsertColumns"        value="0x0108" />
+      <IDSymbol name="cmdidManageFormatStyles"   value="0x010D" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>

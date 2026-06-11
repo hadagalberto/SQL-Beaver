@@ -96,9 +96,14 @@ maiúsculas automaticamente enquanto você digita.
 
 - Atalho via clique direito no editor: **Format Document** ou `Ctrl+K, Ctrl+Y`.
 - Formatação via ScriptDom (indentação, capitalização, espaçamento).
-- 18 opções configuráveis em `%LOCALAPPDATA%\SqlBeaver\format.json`
-  (keywordCasing, indentationSize, quebras de linha por cláusula, multiline para
-  listas de colunas/WHERE/INSERT, etc.).
+- 18 opções configuráveis (keywordCasing, indentationSize, quebras de linha por
+  cláusula, multiline para listas de colunas/WHERE/INSERT, etc.).
+- **Estilos nomeados** — vários perfis de formatação em
+  `%LOCALAPPDATA%\SqlBeaver\formats\*.json`. Troque o estilo ativo pelo submenu
+  **Estilo de formatação** (clique direito); **Gerenciar estilos…** (Tools >
+  SQL Beaver) cria, duplica, renomeia, importa e exporta estilos. Compartilhar
+  com a equipe = enviar o `.json`. (O `format.json` legado migra para
+  `formats\Padrao.json` na primeira execução.)
 - Avisa antes de formatar quando o script contém comentários (a formatação os
   remove).
 - Erro de sintaxe: não toca no texto original.
