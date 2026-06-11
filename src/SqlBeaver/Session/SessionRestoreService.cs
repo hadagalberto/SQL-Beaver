@@ -43,6 +43,16 @@ namespace SqlBeaver.Session
         // antigo antes de ele ser reaberto.
         private static volatile bool _restorePassDone;
 
+        // Durante o teardown do SSMS as janelas fecham uma a uma. Congelamos: os
+        // eventos WindowClosing disparados no shutdown são IGNORADOS (não removem
+        // captions do índice acumulado) → a restauração reabre TODAS as abas.
+        private static volatile bool _shuttingDown;
+
+        // Estado ACUMULADO em memória: o índice persistido espelha este conjunto.
+        // Captions só saem dele por fechamento REAL de janela (não no teardown) ou
+        // após uma restauração bem-sucedida.
+        private static readonly SessionAccumulator _accumulator = new SessionAccumulator();
+
         private sealed class VerifiedWrite
         {
             public string ContentHash;
@@ -72,15 +82,18 @@ namespace SqlBeaver.Session
                 }
                 _dte = dte;
 
-                // Passada final best-effort no shutdown (o grosso já foi persistido
-                // pelas passadas contínuas — o prompt do shell já não tem o que perguntar).
+                // Shutdown: congela o índice acumulado (ignora WindowClosing do
+                // teardown) e faz uma passada final de captura enquanto os docs ainda
+                // estão abertos cedo no teardown.
                 _dteEvents = dte.Events.DTEEvents;
-                _dteEvents.OnBeginShutdown += PersistOpenDocumentsSafe;
+                _dteEvents.OnBeginShutdown += OnBeginShutdown;
 
                 // Troca de janela = passada imediata (ref forte própria; não
-                // compartilhar com o TabColorizer).
+                // compartilhar com o TabColorizer). WindowClosing = remoção explícita
+                // de aba (fechamento REAL, fora do teardown).
                 _windowEvents = dte.Events.WindowEvents;
                 _windowEvents.WindowActivated += (gotFocus, lostFocus) => PersistOpenDocumentsSafe();
+                _windowEvents.WindowClosing += OnWindowClosing;
 
                 // Cadência contínua de 5s em ApplicationIdle.
                 _persistTimer = new DispatcherTimer(DispatcherPriority.ApplicationIdle)
@@ -117,12 +130,14 @@ namespace SqlBeaver.Session
         }
 
         /// <summary>
-        /// Persiste o conjunto ATUAL de documentos .sql abertos (em ordem) em
-        /// lastsession\tab-NN.sql + index.json (atômico). Docs fechados saem do
-        /// índice (não são restaurados indevidamente; o snapshot de 60s do
-        /// SessionSnapshotService segue como rede de segurança do histórico).
-        /// Após cada escrita verificada (ou inalterada desde uma escrita
-        /// verificada), aplica PromptSuppressionRule e marca doc.Saved=true.
+        /// UPSERT ONLY. Persiste cada documento .sql aberto com texto não-vazio em
+        /// lastsession\tab-NN.sql (NN estável por caption via SessionAccumulator) +
+        /// faz upsert no conjunto acumulado. NÃO remove captions ausentes nesta
+        /// passada e NÃO apaga tab-*.sql aqui — remoção é exclusiva do fechamento
+        /// REAL de janela (OnWindowClosing). Assim o teardown do SSMS (docs fechando
+        /// um a um) nunca encolhe o índice. Após cada escrita verificada (ou
+        /// inalterada desde uma escrita verificada), aplica PromptSuppressionRule e
+        /// marca doc.Saved=true.
         /// </summary>
         private static void PersistOpenDocuments(DTE2 dte)
         {
@@ -139,10 +154,6 @@ namespace SqlBeaver.Session
             ActiveConnection activeConn = ConnectionService.GetActiveConnection();
             string activeDocFullName = null;
             try { activeDocFullName = dte.ActiveDocument?.FullName; } catch { }
-
-            var entries = new List<SessionEntry>();
-            var seenCaptions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            int n = 0;
 
             foreach (Document doc in dte.Documents)
             {
@@ -165,11 +176,19 @@ namespace SqlBeaver.Session
 
                     if (string.IsNullOrEmpty(text)) continue;
 
-                    n++;
-                    string tabPath = Path.Combine(dir, $"tab-{n:00}.sql");
                     string caption = NormalizeCaption(doc.Name);
                     string hash = ComputeShortHash(text);
-                    seenCaptions.Add(caption);
+
+                    // Nome de aba ESTÁVEL por caption (atribuído na 1ª vez e mantido).
+                    // O acumulador é puro: devolve "tab-NN.sql"; juntamos com o dir.
+                    bool isActive = string.Equals(fullName, activeDocFullName, StringComparison.OrdinalIgnoreCase);
+                    string tabName = _accumulator.Upsert(
+                        caption,
+                        hash,
+                        isActive ? activeConn?.Server : null,
+                        isActive ? activeConn?.Database : null,
+                        DateTime.Now.ToString("o"));
+                    string tabPath = Path.Combine(dir, tabName);
 
                     // Escrita verificada — NUNCA suprimir o prompt sem o conteúdo
                     // comprovadamente no disco. Conteúdo + destino inalterados desde
@@ -210,20 +229,6 @@ namespace SqlBeaver.Session
                         }
                     }
 
-                    if (snapshotWritten)
-                    {
-                        bool isActive = string.Equals(fullName, activeDocFullName, StringComparison.OrdinalIgnoreCase);
-                        entries.Add(new SessionEntry
-                        {
-                            File        = tabPath,
-                            Caption     = caption,
-                            Server      = isActive ? activeConn?.Server : null,
-                            Database    = isActive ? activeConn?.Database : null,
-                            SavedAt     = DateTime.Now.ToString("o"),
-                            ContentHash = hash
-                        });
-                    }
-
                     // Supressão do prompt: só janelas RASCUNHO (sem arquivo real
                     // no disco OU arquivo na pasta temp — o SSMS 22 cria um .sql
                     // temporário para cada query nova), e só com o snapshot verificado.
@@ -248,34 +253,35 @@ namespace SqlBeaver.Session
                 catch { /* per-document: nunca propagar */ }
             }
 
-            // Docs fechados saem do cache de escritas verificadas
-            var staleCaptions = new List<string>();
-            foreach (string cap in _verifiedByCaption.Keys)
-                if (!seenCaptions.Contains(cap)) staleCaptions.Add(cap);
-            foreach (string cap in staleCaptions)
-                _verifiedByCaption.Remove(cap);
+            // Índice = espelho do conjunto ACUMULADO. Conjunto vazio → não sobrescrever
+            // (guarda contra o teardown; preserva a sessão a ser restaurada).
+            WriteIndexFromAccumulator(dir);
+        }
 
-            // Conjunto vazio = SSMS fechando ou sem abas SQL; sobrescrever o índice
-            // com vazio apagaria a sessão a ser restaurada. Preservamos o último
-            // estado não-vazio (incluindo os tab-*.sql no disco). Consequência
-            // aceita: fechar manualmente todas as abas e seguir usando o SSMS mantém
-            // a última sessão restaurável (restaurar uma aba a mais > perder tudo).
-            if (!ShouldWriteIndex(entries.Count)) return;
+        /// <summary>
+        /// Escreve index.json (atômico) a partir do conjunto acumulado, ajustando o
+        /// File de cada entrada para o caminho ABSOLUTO no diretório de sessão.
+        /// Conjunto vazio → não escreve (ShouldWriteIndex).
+        /// </summary>
+        private static void WriteIndexFromAccumulator(string dir)
+        {
+            IReadOnlyList<SessionEntry> accEntries = _accumulator.Entries;
+            if (!ShouldWriteIndex(accEntries.Count)) return;
 
-            // Remove tab-*.sql órfãos (docs fechados / numeração encolhida) —
-            // só quando há entradas, para não apagar a sessão salva no teardown.
-            try
+            var entries = new List<SessionEntry>(accEntries.Count);
+            foreach (SessionEntry e in accEntries)
             {
-                var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (SessionEntry e in entries) referenced.Add(e.File);
-                foreach (string candidate in Directory.GetFiles(dir, "tab-*.sql"))
-                    if (!referenced.Contains(candidate))
-                        try { File.Delete(candidate); } catch { /* best-effort */ }
+                entries.Add(new SessionEntry
+                {
+                    File        = Path.Combine(dir, e.File),
+                    Caption     = e.Caption,
+                    Server      = e.Server,
+                    Database    = e.Database,
+                    SavedAt     = e.SavedAt,
+                    ContentHash = e.ContentHash
+                });
             }
-            catch { /* best-effort */ }
 
-            // Índice por último, atômico (tmp + Replace) — reescrito apenas com
-            // conjunto não-vazio (ver guarda acima).
             string json = SessionIndex.Serialize(entries);
             string tmp  = IndexPath + ".tmp";
             File.WriteAllText(tmp, json, Encoding.UTF8);
@@ -286,6 +292,62 @@ namespace SqlBeaver.Session
             catch (FileNotFoundException)
             {
                 File.Move(tmp, IndexPath);
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Shutdown: congela o índice e faz uma passada final de captura
+        // ---------------------------------------------------------------
+        private static void OnBeginShutdown()
+        {
+            // Setar PRIMEIRO: a partir daqui os WindowClosing do teardown são
+            // ignorados (não encolhem o índice acumulado).
+            _shuttingDown = true;
+            PersistOpenDocumentsSafe();
+        }
+
+        // ---------------------------------------------------------------
+        // Fechamento REAL de janela = remoção explícita do índice acumulado.
+        // No teardown (_shuttingDown) é ignorado → todas as abas restauram.
+        // ---------------------------------------------------------------
+        private static void OnWindowClosing(EnvDTE.Window window)
+        {
+            try
+            {
+                if (_shuttingDown) return;
+                if (!_restorePassDone) return;
+
+                string docName = null;
+                try { docName = window?.Document?.Name; } catch { return; }
+                if (string.IsNullOrEmpty(docName)) return;
+                if (!docName.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)) return;
+
+                string caption = NormalizeCaption(docName);
+                if (!_accumulator.Remove(caption)) return;
+
+                _verifiedByCaption.Remove(caption);
+
+                string dir = LastSessionDir;
+                // Apaga o tab-*.sql da aba fechada (best-effort). Como a remoção já
+                // saiu do acumulador, achamos o arquivo pela última escrita verificada
+                // não é confiável aqui; recalculamos via Entries seria circular —
+                // então varremos os tab-*.sql não mais referenciados.
+                try
+                {
+                    var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (SessionEntry e in _accumulator.Entries)
+                        referenced.Add(Path.Combine(dir, e.File));
+                    foreach (string candidate in Directory.GetFiles(dir, "tab-*.sql"))
+                        if (!referenced.Contains(candidate))
+                            try { File.Delete(candidate); } catch { /* best-effort */ }
+                }
+                catch { /* best-effort */ }
+
+                WriteIndexFromAccumulator(dir);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("SessionRestoreService.OnWindowClosing", ex);
             }
         }
 
@@ -340,8 +402,12 @@ namespace SqlBeaver.Session
                 }
 
                 // Conteúdo agora vive nas janelas restauradas (docs untitled novos):
-                // a próxima passada de 5s os re-persiste — estado estável desejado.
+                // a próxima passada de 5s os re-acumula — estado estável desejado.
+                // Começo limpo: limpamos os tab-*.sql + index.json E o estado em
+                // memória (acumulador + cache de escritas verificadas).
                 CleanupLastSession();
+                _accumulator.Clear();
+                _verifiedByCaption.Clear();
 
                 if (restored > 0)
                 {
