@@ -47,6 +47,18 @@ própria janela de query.
   com debounce de ~750ms após a última alteração.
 - Documentos acima de 200KB são ignorados automaticamente.
 
+### Lint ao vivo (avisos de qualidade)
+
+- Squiggles de aviso (verde) sobre o AST do ScriptDom para cinco regras configuráveis:
+  - **`select-star`** — `SELECT *`: recomenda listar colunas explicitamente.
+  - **`missing-schema`** — tabela sem schema qualifier (ex.: `FROM T` → `FROM dbo.T`).
+  - **`nolock`** — hints `NOLOCK` / `READUNCOMMITTED` que podem ler dados não confirmados.
+  - **`insert-no-columns`** — `INSERT INTO T VALUES (...)` sem lista de colunas.
+  - **`join-no-on`** — `INNER/LEFT/RIGHT JOIN` sem cláusula `ON`.
+- Só emite avisos em documentos sem erros de sintaxe (o tagger de sintaxe cuida do resto).
+- Regras configuráveis via `%LOCALAPPDATA%\SqlBeaver\lint.json`
+  (criado automaticamente na primeira execução com `"disabledRules": []`).
+
 ### Auto-uppercase de keywords
 
 Palavras reservadas T-SQL (`SELECT`, `WHERE`, `JOIN`, etc.) são convertidas para
