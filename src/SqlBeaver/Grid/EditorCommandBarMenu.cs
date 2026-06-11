@@ -18,7 +18,8 @@ namespace SqlBeaver.Grid
     {
         private const string EditorContextBarName = "SQL Files Editor Context";
 
-        // Referência forte: o handler COM é coletado pelo GC sem isso.
+        // Referências fortes: handlers COM são coletados pelo GC sem isso.
+        private static CommandBarButton _formatButton;
         private static CommandBarButton _refreshCacheButton;
 
         public static void Initialize()
@@ -36,7 +37,8 @@ namespace SqlBeaver.Grid
 
                 CommandBar editorBar = bars[EditorContextBarName];
 
-                _refreshCacheButton = AddButton(editorBar, "SQL Beaver: Refresh metadata cache", OnRefreshCache, beginGroup: true);
+                _formatButton = AddButton(editorBar, "SQL Beaver: Format Document", OnFormatDocument, beginGroup: true);
+                _refreshCacheButton = AddButton(editorBar, "SQL Beaver: Refresh metadata cache", OnRefreshCache, beginGroup: false);
 
                 Log.Info("Comandos registrados no menu de contexto do editor SQL.");
             }
@@ -63,6 +65,59 @@ namespace SqlBeaver.Grid
         private static void ShowStatus(string message)
         {
             _ = Community.VisualStudio.Toolkit.VS.StatusBar.ShowMessageAsync("SQL Beaver: " + message);
+        }
+
+        private static void OnFormatDocument(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus("Format: nenhum documento ativo."); return; }
+
+                bool hasSelection = !doc.Selection.IsEmpty;
+                string original = hasSelection
+                    ? doc.Selection.Text
+                    : doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+
+                if (string.IsNullOrWhiteSpace(original)) { ShowStatus("Format: nada para formatar."); return; }
+
+                if (!Formatting.SqlFormatterService.TryFormat(original, out string formatted, out string error))
+                {
+                    ShowStatus("não formatado: " + error);
+                    Log.Info("Format Document abortado: " + error);
+                    return;
+                }
+
+                dte.UndoContext.Open("SQL Beaver Format Document");
+                try
+                {
+                    if (hasSelection)
+                    {
+                        doc.Selection.Insert(formatted,
+                            (int)vsInsertFlags.vsInsertFlagsContainNewText);
+                    }
+                    else
+                    {
+                        EditPoint start = doc.StartPoint.CreateEditPoint();
+                        start.ReplaceText(doc.EndPoint, formatted,
+                            (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
+                    }
+                }
+                finally
+                {
+                    dte.UndoContext.Close();
+                }
+
+                ShowStatus("documento formatado.");
+                Log.Info("Format Document aplicado" + (hasSelection ? " (seleção)." : " (documento inteiro)."));
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Format Document", ex);
+                ShowStatus("falha no Format Document — veja Output > SQL Beaver");
+            }
         }
 
         private static void OnRefreshCache(CommandBarButton ctrl, ref bool cancelDefault)

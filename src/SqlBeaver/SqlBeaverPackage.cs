@@ -27,6 +27,7 @@ namespace SqlBeaver
             Log.Info("SQL Beaver inicializado.");
             Grid.GridCommandBarMenu.Initialize();
             Grid.EditorCommandBarMenu.Initialize();
+            Guard.ExecuteGuard.Initialize();
         }
     }
 }
