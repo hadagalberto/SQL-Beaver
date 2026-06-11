@@ -7,6 +7,7 @@ using SqlBeaver.Connection;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Metadata;
 using SqlBeaver.Navigation;
+using SqlBeaver.Refactoring;
 
 namespace SqlBeaver.Grid
 {
@@ -25,6 +26,13 @@ namespace SqlBeaver.Grid
         private static CommandBarButton _goToDefinitionButton;
         private static CommandBarButton _findObjectButton;
         private static CommandBarButton _findReferencesButton;
+
+        // Refactor submenu
+        private static CommandBarPopup _refactorPopup;
+        private static CommandBarButton _expandWildcardButton;
+        private static CommandBarButton _qualifyNamesButton;
+        private static CommandBarButton _unqualifyNamesButton;
+        private static CommandBarButton _renameButton;
 
         public static void Initialize()
         {
@@ -47,6 +55,17 @@ namespace SqlBeaver.Grid
                 _findObjectButton = AddButton(editorBar, "SQL Beaver: Localizar objeto…", OnFindObject, beginGroup: false);
                 _findReferencesButton = AddButton(editorBar, "SQL Beaver: Localizar referências", OnFindReferences, beginGroup: false);
 
+                // Refactor submenu
+                _refactorPopup = (CommandBarPopup)editorBar.Controls.Add(
+                    MsoControlType.msoControlPopup, Type.Missing, Type.Missing, Type.Missing, /*temporary:*/ true);
+                _refactorPopup.Caption = "SQL Beaver: Refatorar";
+                _refactorPopup.BeginGroup = true;
+
+                _expandWildcardButton  = AddButton(_refactorPopup, "Expand wildcard (SELECT *)", OnExpandWildcard,  beginGroup: false);
+                _qualifyNamesButton    = AddButton(_refactorPopup, "Qualify object names",        OnQualifyNames,    beginGroup: false);
+                _unqualifyNamesButton  = AddButton(_refactorPopup, "Remove qualificação",         OnUnqualifyNames,  beginGroup: false);
+                _renameButton          = AddButton(_refactorPopup, "Rename alias/variável…",      OnRename,          beginGroup: true);
+
                 Log.Info("Comandos registrados no menu de contexto do editor SQL.");
             }
             catch (Exception ex)
@@ -62,6 +81,20 @@ namespace SqlBeaver.Grid
             bool beginGroup)
         {
             var button = (CommandBarButton)bar.Controls.Add(
+                MsoControlType.msoControlButton, Type.Missing, Type.Missing, Type.Missing, /*temporary:*/ true);
+            button.Caption    = caption;
+            button.BeginGroup = beginGroup;
+            button.Click     += onClick;
+            return button;
+        }
+
+        private static CommandBarButton AddButton(
+            CommandBarPopup popup,
+            string caption,
+            _CommandBarButtonEvents_ClickEventHandler onClick,
+            bool beginGroup)
+        {
+            var button = (CommandBarButton)popup.Controls.Add(
                 MsoControlType.msoControlButton, Type.Missing, Type.Missing, Type.Missing, /*temporary:*/ true);
             button.Caption    = caption;
             button.BeginGroup = beginGroup;
@@ -222,6 +255,66 @@ namespace SqlBeaver.Grid
             {
                 Log.Error("Localizar referências", ex);
                 ShowStatus("falha em Localizar referências — veja Output > SQL Beaver");
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Refactor submenu handlers
+        // ---------------------------------------------------------------
+
+        private static void OnExpandWildcard(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.ExpandWildcard();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Expand wildcard", ex);
+                ShowStatus("falha em Expand * — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnQualifyNames(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.QualifyNames();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Qualify names", ex);
+                ShowStatus("falha em Qualify — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnUnqualifyNames(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.UnqualifyNames();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Unqualify names", ex);
+                ShowStatus("falha em Unqualify — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnRename(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                RefactoringCommands.RenameAliasOrVariable();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Rename alias/variable", ex);
+                ShowStatus("falha em Rename — veja Output > SQL Beaver");
             }
         }
     }
