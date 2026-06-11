@@ -218,12 +218,48 @@ namespace SqlBeaver.Tests
         }
 
         [Fact]
-        public void CommaInsideParens_IsNotColumnContext()
+        public void CommaInsideParens_NowColumnContext()
         {
-            // vírgula dentro de IN (...): não é a lista do SELECT
+            // função/IN-list: colunas são a sugestão certa (mudança intencional sobre decisão anterior)
             var ctx = Analyze("WHERE x IN (a, Pe");
-            Assert.Equal(SqlContextKind.FreeIdentifier, ctx.Kind);
+            Assert.Equal(SqlContextKind.ColumnContext, ctx.Kind);
             Assert.Equal("Pe", ctx.Partial);
+        }
+
+        // ---- posições de expressão: colunas (fix do CASE) ----
+
+        [Theory]
+        [InlineData("SELECT CASE cp")]
+        [InlineData("SELECT CASE ")]
+        [InlineData("CASE WHEN ")]
+        [InlineData("CASE WHEN x = 1 THEN ")]
+        [InlineData("WHEN x = 1 THEN y ELSE ")]
+        [InlineData("WHERE a LIKE ")]
+        [InlineData("WHERE a BETWEEN ")]
+        [InlineData("WHERE NOT ")]
+        [InlineData("WHERE x IN ")]
+        public void ExpressionKeywords_ReturnColumnContext(string text)
+        {
+            Assert.Equal(SqlContextKind.ColumnContext, Analyze(text).Kind);
+        }
+
+        [Theory]
+        [InlineData("WHERE p.Id = ")]
+        [InlineData("WHERE p.Id = Pe")]
+        [InlineData("WHERE a < ")]
+        [InlineData("WHERE a >= Pe")]
+        [InlineData("SELECT a + ")]
+        public void AfterComparisonOrArithmeticOperator_ReturnsColumnContext(string text)
+        {
+            Assert.Equal(SqlContextKind.ColumnContext, Analyze(text).Kind);
+        }
+
+        [Theory]
+        [InlineData("SELECT * ")]          // '*' não é operador de expressão aqui
+        [InlineData("SELECT * FROM ")]     // regressão: FROM continua AfterFromJoin (não rodar a regra do operador)
+        public void StarAndExistingContexts_NotHijacked(string text)
+        {
+            Assert.NotEqual(SqlContextKind.ColumnContext, Analyze(text).Kind);
         }
 
         // ---- v2: JOIN separado de FROM ----

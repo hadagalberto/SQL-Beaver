@@ -13,7 +13,8 @@ namespace SqlBeaver.Analysis
         private const int MaxAnalysisLength = 64 * 1024;
 
         private static readonly string[] FromKeywords = { "FROM", "INTO", "UPDATE" };
-        private static readonly string[] ColumnKeywords = { "SELECT", "WHERE", "ON", "AND", "OR", "HAVING", "BY", "SET" };
+        private static readonly string[] ColumnKeywords = { "SELECT", "WHERE", "ON", "AND", "OR", "HAVING", "BY", "SET",
+                                                             "CASE", "WHEN", "THEN", "ELSE", "IN", "LIKE", "BETWEEN", "NOT" };
         private static readonly string[] BlockedKeywords = { "EXEC", "EXECUTE", "USE", "GO", "AS", "DECLARE", "PROC", "PROCEDURE" };
 
         public static SqlContext Analyze(string text, int caretPosition)
@@ -55,11 +56,12 @@ namespace SqlBeaver.Analysis
                 i--;
             bool hasWhitespaceGap = i < beforeWhitespace;
 
-            // vírgula no nível 0 → ColumnContext ou AfterFromJoin; vírgula dentro de parênteses → FreeIdentifier
+            // vírgula no nível 0 → ColumnContext ou AfterFromJoin
+            // vírgula dentro de parênteses (paren depth > 0) → ColumnContext (função/IN-list; mudança intencional)
             if (i >= start && text[i] == ',')
             {
                 if (state.ParenDepth != 0)
-                    return FreeIdentifierOrNone(partial, partialStart);
+                    return new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart);
 
                 return IsCommaInFromList(text, start, i)
                     ? new SqlContext(SqlContextKind.AfterFromJoin, null, partial, partialStart, "FROM")
@@ -83,6 +85,16 @@ namespace SqlBeaver.Analysis
 
             if (hasWhitespaceGap && IsAny(previousWord, BlockedKeywords))
                 return SqlContext.None;
+
+            // Operador de comparação/aritmético antes do cursor (sem palavra anterior):
+            // = < > ! + / % → ColumnContext. Excluído: '*' (SELECT *) e '-' (ambiguidade negativo/comentário).
+            if (previousWord.Length == 0 && i >= start)
+            {
+                char prevChar = text[i];
+                if (prevChar == '=' || prevChar == '<' || prevChar == '>' ||
+                    prevChar == '!' || prevChar == '+' || prevChar == '/' || prevChar == '%')
+                    return new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart);
+            }
 
             return FreeIdentifierOrNone(partial, partialStart);
         }
