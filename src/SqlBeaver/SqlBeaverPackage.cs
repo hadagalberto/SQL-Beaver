@@ -30,6 +30,7 @@ namespace SqlBeaver
             Grid.EditorCommandBarMenu.Initialize();
             Guard.ExecuteGuard.Initialize();
             Session.SessionSnapshotService.Initialize();
+            Environments.TabColorizer.Initialize();
 
             if (await GetServiceAsync(typeof(System.ComponentModel.Design.IMenuCommandService))
                 is System.ComponentModel.Design.IMenuCommandService menuService)

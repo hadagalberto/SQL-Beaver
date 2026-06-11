@@ -29,6 +29,7 @@ própria janela de query.
 
 - Faixa colorida no topo do editor identifica o ambiente da conexão ativa
   (Produção, Homologação, Desenvolvimento) com nome, servidor e banco.
+- a própria ABA também é pintada (técnica de árvore visual, sem API pública — se um update do SSMS quebrar, a faixa colorida continua), aba ganha cor ao ser ativada.
 - Configurável em `%LOCALAPPDATA%\SqlBeaver\environments.json`: regras com globs de servidor/banco,
   cor `#RRGGBB` e flag `confirmExecute`.
 - Com `confirmExecute: true`, o SQL Beaver exige confirmação antes de **qualquer** Execute
