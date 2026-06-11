@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows.Forms;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
@@ -42,6 +43,8 @@ namespace SqlBeaver.Navigation
         // Data
         // ---------------------------------------------------------------
         private readonly DbMetadata _metadata;
+        private readonly string _server;
+        private readonly string _database;
         private readonly List<FindItem> _allItems = new List<FindItem>();
 
         private sealed class FindItem
@@ -56,9 +59,11 @@ namespace SqlBeaver.Navigation
         // ---------------------------------------------------------------
         // Constructor
         // ---------------------------------------------------------------
-        public FindObjectDialog(DbMetadata metadata)
+        public FindObjectDialog(DbMetadata metadata, string server, string database)
         {
             _metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
+            _server = server;
+            _database = database;
 
             Text = "SQL Beaver — Localizar objeto";
             Width = 600;
@@ -153,10 +158,22 @@ namespace SqlBeaver.Navigation
             string filter = _searchBox.Text.Trim();
             string typeFilter = _typeFilter.SelectedItem as string ?? "Todos";
 
+            // Sem texto de filtro: os mais usados primeiro (tabelas com execuções registradas),
+            // depois ordem alfabética. Com filtro, mantém a ordem original da lista.
+            IEnumerable<FindItem> source = _allItems;
+            if (string.IsNullOrEmpty(filter))
+            {
+                source = _allItems
+                    .OrderByDescending(it => it.IsTable
+                        ? Usage.UsageStore.GetTableCount(_server, _database, DbMetadata.TableKey(it.Schema, it.Name))
+                        : 0)
+                    .ThenBy(it => it.Name, StringComparer.OrdinalIgnoreCase);
+            }
+
             _listView.BeginUpdate();
             _listView.Items.Clear();
             int count = 0;
-            foreach (FindItem item in _allItems)
+            foreach (FindItem item in source)
             {
                 if (count >= MaxDisplayRows) break;
 
@@ -254,7 +271,7 @@ namespace SqlBeaver.Navigation
                     owner.AssignHandle((IntPtr)(int)dte.MainWindow.HWnd);
                 }
 
-                using (var dlg = new FindObjectDialog(metadata))
+                using (var dlg = new FindObjectDialog(metadata, conn.Server, conn.Database))
                 {
                     DialogResult result;
                     try

@@ -136,3 +136,14 @@ pendências consolidadas na última seção e reportadas ao usuário na entrega.
 8. `confirmExecute=true` por padrão para o ambiente "Produção" do arquivo exemplo — confirmar se o
    comportamento (confirmar TODO execute em prod) é o desejado ou se deve valer só para statements perigosos.
 9. FindReferences usa apenas sys.sql_expression_dependencies (sem o fallback sys.sql_modules LIKE — referências em SQL dinâmico não aparecem); adicionar se sentir falta na prática.
+
+## Pós-entrega: ranking por uso (v4)
+
+- **Sinal**: cada Execute não cancelado (interceptado pelo ExecuteGuard) passa o script pelo
+  `UsedTablesExtractor`, que extrai as tabelas e os pares de join co-usados por statement.
+- **Storage**: contadores persistidos em `%LOCALAPPDATA%\SqlBeaver\usage.json`, indexados por
+  `server|database` (gravação atômica em background; cap de 100k entradas por dicionário).
+- **Efeito**: as tabelas mais usadas sobem no completion (bucket de sortText do `UsageRanker`);
+  as sugestões de FK-JOIN são ordenadas pelo uso do par (ordenação estável — empates preservam
+  a prioridade mesmo-schema); o diálogo "Localizar objeto" ordena por uso quando o filtro está vazio.
+- **Pendência**: decay/expiração dos contadores não implementado — os contadores só crescem.

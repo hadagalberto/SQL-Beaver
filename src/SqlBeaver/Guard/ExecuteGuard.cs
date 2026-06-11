@@ -118,8 +118,8 @@ namespace SqlBeaver.Guard
                 }
                 else
                 {
-                    // Nenhuma condição de guarda ativa — grava histórico e retorna
-                    QueryHistoryService.Record(connection?.Server, connection?.Database, sql);
+                    // Nenhuma condição de guarda ativa — grava histórico/uso e retorna
+                    RecordExecution(connection, sql);
                     return;
                 }
 
@@ -154,8 +154,8 @@ namespace SqlBeaver.Guard
                 }
                 else
                 {
-                    // Usuário confirmou — execução não cancelada — grava histórico
-                    QueryHistoryService.Record(connection?.Server, connection?.Database, sql);
+                    // Usuário confirmou — execução não cancelada — grava histórico/uso
+                    RecordExecution(connection, sql);
                 }
             }
             catch (Exception ex)
@@ -163,6 +163,34 @@ namespace SqlBeaver.Guard
                 Log.Error("ExecuteGuard.OnBeforeExecute", ex);
                 // nunca bloquear a execução por falha do guard
             }
+        }
+
+        /// <summary>Execução não cancelada: grava histórico e contadores de uso (ranking).</summary>
+        private static void RecordExecution(ActiveConnection connection, string sql)
+        {
+            QueryHistoryService.Record(connection?.Server, connection?.Database, sql);
+
+            Metadata.DbMetadata metadata = null;
+            if (connection != null)
+            {
+                try
+                {
+                    metadata = Completion.SqlBeaverCompletionSourceProvider.Cache.TryGet(
+                        connection.Server, connection.Database,
+                        new Metadata.MetadataRequest
+                        {
+                            ConnectionString = connection.ConnectionString,
+                            AccessToken = connection.AccessToken,
+                            ProviderConnectionType = connection.ProviderConnectionType
+                        });
+                }
+                catch
+                {
+                    // sem metadata: o extrator vira no-op, mas o histórico já foi gravado
+                }
+            }
+
+            Usage.UsageStore.RecordExecutionAsync(connection?.Server, connection?.Database, sql, metadata);
         }
     }
 }

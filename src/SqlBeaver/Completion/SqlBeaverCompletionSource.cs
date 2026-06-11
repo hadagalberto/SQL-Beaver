@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.ComponentModel.Composition;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Core.Imaging;
@@ -134,7 +135,7 @@ namespace SqlBeaver.Completion
                 if (metadata == null)
                     return Task.FromResult(CompletionContext.Empty); // carga disparada em background
 
-                ImmutableArray<CompletionItem> items = BuildItems(context, metadata, scope);
+                ImmutableArray<CompletionItem> items = BuildItems(context, metadata, scope, connection);
 
                 if (!_loggedFirstItems)
                 {
@@ -156,7 +157,8 @@ namespace SqlBeaver.Completion
             => Task.FromResult<object>(item.InsertText);
 
         private ImmutableArray<CompletionItem> BuildItems(
-            SqlContext context, DbMetadata metadata, IReadOnlyList<TableRef> scope)
+            SqlContext context, DbMetadata metadata, IReadOnlyList<TableRef> scope,
+            ActiveConnection connection)
         {
             var items = ImmutableArray.CreateBuilder<CompletionItem>();
 
@@ -171,18 +173,18 @@ namespace SqlBeaver.Completion
                     break;
 
                 case SqlContextKind.AfterJoin:
-                    BuildFkJoinItems(items, metadata, scope, context.Partial);
-                    BuildTableAndSchemaItems(items, metadata, scope, withAlias: true);
+                    BuildFkJoinItems(items, metadata, scope, connection, context.Partial);
+                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: true);
                     break;
 
                 case SqlContextKind.AfterFromJoin:
                     bool alias = string.Equals(context.TriggerKeyword, "FROM", StringComparison.OrdinalIgnoreCase);
-                    BuildTableAndSchemaItems(items, metadata, scope, withAlias: alias);
+                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: alias);
                     break;
 
                 default: // FreeIdentifier
                     BuildSnippetItems(items);
-                    BuildTableAndSchemaItems(items, metadata, scope, withAlias: false);
+                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: false);
                     break;
             }
 
@@ -251,7 +253,8 @@ namespace SqlBeaver.Completion
 
         private void BuildFkJoinItems(
             ImmutableArray<CompletionItem>.Builder items,
-            DbMetadata metadata, IReadOnlyList<TableRef> scope, string partial = null)
+            DbMetadata metadata, IReadOnlyList<TableRef> scope,
+            ActiveConnection connection, string partial = null)
         {
             // O parcial digitado depois do JOIN entra no escopo como TableRef sem alias;
             // sem a poda, a própria sugestão FK que o usuário está digitando é descartada
@@ -269,8 +272,16 @@ namespace SqlBeaver.Completion
                 scope = pruned;
             }
 
+            // Ranking por uso: pares de join mais executados primeiro. OrderByDescending
+            // é estável — empates (count 0) preservam a ordem do builder (mesmo schema antes).
+            string server = connection?.Server;
+            string database = connection?.Database;
+            List<FkJoinSuggestion> suggestions = FkJoinSuggestionBuilder.Build(scope, metadata)
+                .OrderByDescending(s => Usage.UsageStore.GetJoinCount(server, database, s.PairKey))
+                .ToList();
+
             int index = 0;
-            foreach (FkJoinSuggestion suggestion in FkJoinSuggestionBuilder.Build(scope, metadata))
+            foreach (FkJoinSuggestion suggestion in suggestions)
             {
                 items.Add(new CompletionItem(
                     displayText: suggestion.DisplayText,
@@ -279,7 +290,7 @@ namespace SqlBeaver.Completion
                     filters: ImmutableArray<CompletionFilter>.Empty,
                     suffix: "FK",
                     insertText: suggestion.InsertText,
-                    sortText: "0_" + index.ToString("D3"), // topo da lista; preserva ordem do builder
+                    sortText: "0_" + index.ToString("D3"), // topo da lista; preserva ordem pós-ranking
                     filterText: suggestion.FilterText,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
                 index++;
@@ -306,7 +317,8 @@ namespace SqlBeaver.Completion
 
         private void BuildTableAndSchemaItems(
             ImmutableArray<CompletionItem>.Builder items,
-            DbMetadata metadata, IReadOnlyList<TableRef> scope, bool withAlias)
+            DbMetadata metadata, IReadOnlyList<TableRef> scope,
+            ActiveConnection connection, bool withAlias)
         {
             foreach (string schema in metadata.Schemas)
                 items.Add(new CompletionItem(SqlIdentifier.Bracket(schema), this, SchemaIcon));
@@ -325,6 +337,10 @@ namespace SqlBeaver.Completion
                     ? qualified + " " + AliasGenerator.Generate(table.Name, usedAliases)
                     : qualified;
 
+                int usageCount = Usage.UsageStore.GetTableCount(
+                    connection?.Server, connection?.Database,
+                    DbMetadata.TableKey(table.Schema, table.Name));
+
                 items.Add(new CompletionItem(
                     displayText: table.Name,
                     source: this,
@@ -332,7 +348,7 @@ namespace SqlBeaver.Completion
                     filters: ImmutableArray<CompletionFilter>.Empty,
                     suffix: table.Schema,
                     insertText: insert,
-                    sortText: table.Name + " " + qualified,
+                    sortText: Usage.UsageRanker.TableSortText(usageCount, table.Name),
                     filterText: table.Name,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
             }

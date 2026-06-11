@@ -18,6 +18,8 @@ própria janela de query.
   prioridade.
 - **Aliases automáticos** — ao inserir uma tabela em FROM / JOIN o alias é
   sugerido junto.
+- **Ranking por uso** — as tabelas e JOINs que você mais usa sobem para o topo
+  das sugestões (aprendido das execuções).
 - As sugestões também incluem os snippets cadastrados (ver abaixo).
 - Silencioso dentro de strings e comentários.
 - Cache de metadata por servidor+database (TTL 10 min); nunca bloqueia a
