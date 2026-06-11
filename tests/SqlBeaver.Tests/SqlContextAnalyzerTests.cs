@@ -291,6 +291,16 @@ namespace SqlBeaver.Tests
             Assert.Equal(SqlContextKind.ColumnContext, Analyze(text).Kind);
         }
 
+        [Fact]
+        public void CaseWithPartial_CapturesPartialAndStart()
+        {
+            // regressão: "SELECT CASE cp" deve filtrar por "cp" (span correto), não listar tudo
+            var ctx = Analyze("SELECT CASE cp");
+            Assert.Equal(SqlContextKind.ColumnContext, ctx.Kind);
+            Assert.Equal("cp", ctx.Partial);
+            Assert.Equal(12, ctx.PartialStart); // "SELECT CASE " = 12 chars
+        }
+
         [Theory]
         [InlineData("WHERE p.Id = ")]
         [InlineData("WHERE p.Id = Pe")]
