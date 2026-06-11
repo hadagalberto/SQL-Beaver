@@ -31,6 +31,16 @@ namespace SqlBeaver.Editing
         public bool HasPrev => CurrentIndex > 0;
 
         public PlaceholderGroup Current => Groups.Count > 0 ? Groups[CurrentIndex] : null;
+
+        // ── Dados de lifetime para desinscrição de eventos ────────────────────
+        /// <summary>View à qual os eventos foram associados.</summary>
+        public ITextView TextView { get; set; }
+
+        /// <summary>Handler inscrito em <see cref="ITextCaret.PositionChanged"/>.</summary>
+        public EventHandler<CaretPositionChangedEventArgs> CaretHandler { get; set; }
+
+        /// <summary>Handler inscrito em <see cref="ITextBuffer.Changed"/>.</summary>
+        public EventHandler<TextContentChangedEventArgs> BufferHandler { get; set; }
     }
 
     /// <summary>Conjunto de tracking spans que representam um mesmo placeholder (mirror fields).</summary>
@@ -296,14 +306,25 @@ namespace SqlBeaver.Editing
 
         private static void StoreSession(ITextView textView, SnippetSession session)
         {
-            // Remove sessão anterior se houver
+            // Remove sessão anterior se houver (desinscreve eventos da sessão antiga)
             EndSession(textView);
+
+            // Criar delegates nomeados para poder desinscrever depois
+            EventHandler<CaretPositionChangedEventArgs> caretHandler =
+                (s, e) => OnCaretPositionChanged(textView, e);
+            EventHandler<TextContentChangedEventArgs> bufferHandler =
+                (s, e) => OnBufferChanged(textView, e);
+
+            // Salvar referências no objeto de sessão para desinscrição em EndSession
+            session.TextView      = textView;
+            session.CaretHandler  = caretHandler;
+            session.BufferHandler = bufferHandler;
 
             textView.Properties[SessionKey] = session;
 
             // Cancelar sessão se o caret sair dos spans ou o buffer mudar fora de um span
-            textView.Caret.PositionChanged += (s, e) => OnCaretPositionChanged(textView, e);
-            textView.TextBuffer.Changed += (s, e) => OnBufferChanged(textView, e);
+            textView.Caret.PositionChanged += caretHandler;
+            textView.TextBuffer.Changed    += bufferHandler;
         }
 
         private static SnippetSession GetSession(ITextView textView)
@@ -315,8 +336,25 @@ namespace SqlBeaver.Editing
 
         private static void EndSession(ITextView textView)
         {
-            if (textView.Properties.ContainsProperty(SessionKey))
+            if (textView.Properties.TryGetProperty(SessionKey, out SnippetSession session))
+            {
+                // Desinscrever os eventos antes de remover a sessão
+                try
+                {
+                    if (session.CaretHandler != null)
+                        textView.Caret.PositionChanged -= session.CaretHandler;
+                }
+                catch { /* nunca lançar de EndSession */ }
+
+                try
+                {
+                    if (session.BufferHandler != null)
+                        textView.TextBuffer.Changed -= session.BufferHandler;
+                }
+                catch { /* nunca lançar de EndSession */ }
+
                 textView.Properties.RemoveProperty(SessionKey);
+            }
         }
 
         private static void OnCaretPositionChanged(ITextView textView, CaretPositionChangedEventArgs e)

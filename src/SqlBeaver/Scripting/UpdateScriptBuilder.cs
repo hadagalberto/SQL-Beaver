@@ -35,6 +35,9 @@ namespace SqlBeaver.Scripting
                         }
                     }
                 }
+                // PK known but none of its columns exist in this grid projection → treat as unresolved
+                if (pkIndexes.Count == 0)
+                    hasPk = false;
             }
 
             var sb = new StringBuilder();

@@ -80,5 +80,27 @@ namespace SqlBeaver.Tests
                 new GridData(cols, rows), "[T]", new[] { "My Id" });
             Assert.Contains("[My Id] = 1", script);
         }
+
+        /// <summary>
+        /// PK é conhecida (["Id"]) mas a grid é uma projeção que não contém a coluna Id.
+        /// Deve emitir o placeholder /* defina a chave */ 1 = 0 e o comentário ATENÇÃO,
+        /// e NÃO deve emitir "WHERE ;".
+        /// </summary>
+        [Fact]
+        public void PkNotInGridColumns_EmitsPlaceholderAndComment()
+        {
+            var cols = new List<GridColumn>
+            {
+                new GridColumn("Nome", typeof(string)),
+                new GridColumn("Email", typeof(string))
+            };
+            var rows = new List<string[]> { new[] { "Alice", "alice@example.com" } };
+            string script = DeleteScriptBuilder.Build(
+                new GridData(cols, rows), "dbo.Usuarios", new[] { "Id" });
+
+            Assert.Contains("ATENÇÃO", script);
+            Assert.Contains("/* defina a chave */ 1 = 0", script);
+            Assert.DoesNotContain("WHERE ;", script);
+        }
     }
 }

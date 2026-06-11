@@ -42,6 +42,10 @@ namespace SqlBeaver.Scripting
                 else      nonPkIndexes.Add(c);
             }
 
+            // PK known but none of its columns exist in this grid projection → treat as unresolved
+            if (hasPk && pkIndexes.Count == 0)
+                hasPk = false;
+
             int rowCount = Math.Min(data.Rows.Count, MaxRows);
             bool truncated = data.Rows.Count > MaxRows;
 
