@@ -5,6 +5,7 @@
     <RootNamespace>SqlBeaver</RootNamespace>
     <RuntimeIdentifier>win</RuntimeIdentifier>
     <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
     <!-- Empacotamento VSIX apenas no MSBuild completo (VS). `dotnet build` gera só a DLL, para os testes. -->
     <IsFullMsBuild Condition="'$(MSBuildRuntimeType)' != 'Core'">true</IsFullMsBuild>
     <VSSDKBuildToolsAutoSetup Condition="'$(IsFullMsBuild)' == 'true'">true</VSSDKBuildToolsAutoSetup>
