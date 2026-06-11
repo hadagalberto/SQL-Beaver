@@ -72,4 +72,19 @@ foreach ($extRoot in @("$ssmsLocal\Extensions", "$ssmsIde\Extensions")) {
     }
 }
 
+# pré-mescla a configuração headless: sem isso, a PRIMEIRA abertura após o deploy
+# executa o merge mas só a segunda enxerga menus/pacotes novos ("reinicie duas vezes")
+Write-Host "Pré-mesclando a configuração do shell (headless, ~30s)..."
+try {
+    $merge = Start-Process (Join-Path $ssmsIde "SSMS.exe") -ArgumentList "/updateconfiguration" -PassThru -WindowStyle Hidden
+    if (-not $merge.WaitForExit(120000)) {
+        $merge.Kill()
+        Write-Warning "Merge demorou demais; a primeira abertura do SSMS fará o merge (abra duas vezes se algo não aparecer)."
+    } else {
+        Write-Host "Configuração mesclada."
+    }
+} catch {
+    Write-Warning "Não foi possível pré-mesclar ($($_.Exception.Message)); abra o SSMS duas vezes se algo não aparecer."
+}
+
 Write-Host "Pronto. Abra o SSMS (a primeira abertura será mais lenta - reconstrução do cache MEF)."
