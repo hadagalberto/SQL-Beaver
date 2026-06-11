@@ -19,6 +19,12 @@ namespace SqlBeaver.Analysis
 
         /// <summary>Digitação livre de identificador: tabelas + schemas.</summary>
         FreeIdentifier,
+
+        /// <summary>Após EXEC/EXECUTE: procedures e funções do catálogo.</summary>
+        AfterExec,
+
+        /// <summary>Após USE: bancos do servidor.</summary>
+        AfterUse,
     }
 
     public sealed class SqlContext

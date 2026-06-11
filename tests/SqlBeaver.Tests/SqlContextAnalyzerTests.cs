@@ -184,17 +184,65 @@ namespace SqlBeaver.Tests
         // ---- keywords bloqueadas ----
 
         [Theory]
-        [InlineData("EXEC ")]
-        [InlineData("EXEC sp")]
-        [InlineData("EXECUTE my")]
-        [InlineData("USE ")]
-        [InlineData("USE ma")]
         [InlineData("DECLARE ")]
         [InlineData("SELECT 1 AS ali")]
         [InlineData("CREATE PROC my")]
         public void AfterBlockedKeyword_ReturnsNone(string text)
         {
             Assert.Equal(SqlContextKind.None, Analyze(text).Kind);
+        }
+
+        // ---- EXEC / EXECUTE → AfterExec ----
+
+        [Theory]
+        [InlineData("EXEC ")]
+        [InlineData("EXEC sp")]
+        [InlineData("EXECUTE ")]
+        [InlineData("EXECUTE my")]
+        [InlineData("execute sp_Help")]
+        public void AfterExecKeyword_ReturnsAfterExec(string text)
+        {
+            var ctx = Analyze(text);
+            Assert.Equal(SqlContextKind.AfterExec, ctx.Kind);
+        }
+
+        [Fact]
+        public void AfterExec_CarriesPartialAndTriggerKeyword()
+        {
+            var ctx = Analyze("EXEC sp_Get");
+            Assert.Equal(SqlContextKind.AfterExec, ctx.Kind);
+            Assert.Equal("sp_Get", ctx.Partial);
+            Assert.Equal("EXEC", ctx.TriggerKeyword);
+        }
+
+        [Fact]
+        public void AfterExecute_TriggerKeywordIsExecute()
+        {
+            var ctx = Analyze("EXECUTE dbo");
+            Assert.Equal(SqlContextKind.AfterExec, ctx.Kind);
+            Assert.Equal("dbo", ctx.Partial);
+            Assert.Equal("EXECUTE", ctx.TriggerKeyword);
+        }
+
+        // ---- USE → AfterUse ----
+
+        [Theory]
+        [InlineData("USE ")]
+        [InlineData("USE Db")]
+        [InlineData("use master")]
+        public void AfterUseKeyword_ReturnsAfterUse(string text)
+        {
+            var ctx = Analyze(text);
+            Assert.Equal(SqlContextKind.AfterUse, ctx.Kind);
+        }
+
+        [Fact]
+        public void AfterUse_CarriesPartialAndTriggerKeyword()
+        {
+            var ctx = Analyze("USE MyDb");
+            Assert.Equal(SqlContextKind.AfterUse, ctx.Kind);
+            Assert.Equal("MyDb", ctx.Partial);
+            Assert.Equal("USE", ctx.TriggerKeyword);
         }
 
         // ---- v2: contexto de colunas ----

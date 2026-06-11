@@ -62,6 +62,19 @@ namespace SqlBeaver.Completion
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Link), "JOIN por FK");
         private static readonly ImageElement SnippetIcon =
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Snippet), "Snippet");
+        private static readonly ImageElement ProcIcon =
+            new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Method), "Procedure/Function");
+        private static readonly ImageElement DatabaseIcon =
+            new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Database), "Banco de dados");
+
+        private static readonly DatabaseListCache DbListCache = CreateDbListCache();
+
+        private static DatabaseListCache CreateDbListCache()
+        {
+            var cache = new DatabaseListCache();
+            cache.LoadFailed += ex => Log.Error("Falha ao carregar lista de bancos", ex);
+            return cache;
+        }
 
         private readonly MetadataCache _cache;
         private ActiveConnection _connection;
@@ -182,6 +195,14 @@ namespace SqlBeaver.Completion
                     BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: alias);
                     break;
 
+                case SqlContextKind.AfterExec:
+                    BuildExecItems(items, metadata, connection);
+                    break;
+
+                case SqlContextKind.AfterUse:
+                    BuildUseItems(items, connection);
+                    break;
+
                 default: // FreeIdentifier
                     BuildSnippetItems(items);
                     BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: false);
@@ -189,6 +210,74 @@ namespace SqlBeaver.Completion
             }
 
             return items.ToImmutable();
+        }
+
+        private void BuildExecItems(
+            ImmutableArray<CompletionItem>.Builder items,
+            DbMetadata metadata,
+            ActiveConnection connection)
+        {
+            string server   = connection?.Server;
+            string database = connection?.Database;
+
+            foreach (ObjectEntry obj in metadata.Objects)
+            {
+                if (obj.Type != DbObjectType.Procedure &&
+                    obj.Type != DbObjectType.ScalarFunction &&
+                    obj.Type != DbObjectType.TableFunction)
+                    continue;
+
+                string key = DbMetadata.TableKey(obj.Schema, obj.Name);
+                IReadOnlyList<ParameterEntry> parameters;
+                if (!metadata.ParametersByObject.TryGetValue(key, out parameters))
+                    parameters = new ParameterEntry[0];
+
+                string insertText = ProcCallBuilder.BuildExecInsertText(obj.Schema, obj.Name, parameters);
+
+                int usageCount = Usage.UsageStore.GetTableCount(server, database, key);
+
+                items.Add(new CompletionItem(
+                    displayText: obj.Name,
+                    source: this,
+                    icon: ProcIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: obj.Schema + " · " + (obj.Type == DbObjectType.Procedure ? "proc" : "fn"),
+                    insertText: insertText,
+                    sortText: Usage.UsageRanker.TableSortText(usageCount, obj.Name),
+                    filterText: obj.Name,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
+            }
+        }
+
+        private void BuildUseItems(
+            ImmutableArray<CompletionItem>.Builder items,
+            ActiveConnection connection)
+        {
+            if (connection == null) return;
+
+            var request = new MetadataRequest
+            {
+                ConnectionString      = connection.ConnectionString,
+                AccessToken           = connection.AccessToken,
+                ProviderConnectionType = connection.ProviderConnectionType,
+            };
+
+            IReadOnlyList<string> databases = DbListCache.TryGet(connection.Server, request);
+            if (databases == null) return; // carga em andamento — popup vazio
+
+            foreach (string db in databases)
+            {
+                items.Add(new CompletionItem(
+                    displayText: db,
+                    source: this,
+                    icon: DatabaseIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: string.Empty,
+                    insertText: SqlIdentifier.Bracket(db),
+                    sortText: db,
+                    filterText: db,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
+            }
         }
 
         private void BuildDotItems(

@@ -68,7 +68,21 @@ SELECT s.name, o.name, RTRIM(o.type)
 FROM sys.objects AS o
 JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 WHERE o.type IN ('P', 'V', 'FN', 'IF', 'TF') AND o.is_ms_shipped = 0
-ORDER BY s.name, o.name;";
+ORDER BY s.name, o.name;
+
+SELECT s.name, o.name, p.name,
+       t.name +
+           CASE WHEN t.name IN ('varchar','char','varbinary') THEN '(' + CASE WHEN p.max_length = -1 THEN 'max' ELSE CAST(p.max_length AS varchar(10)) END + ')'
+                WHEN t.name IN ('nvarchar','nchar') THEN '(' + CASE WHEN p.max_length = -1 THEN 'max' ELSE CAST(p.max_length / 2 AS varchar(10)) END + ')'
+                WHEN t.name IN ('decimal','numeric') THEN '(' + CAST(p.precision AS varchar(10)) + ',' + CAST(p.scale AS varchar(10)) + ')'
+                ELSE '' END,
+       p.is_output, p.parameter_id
+FROM sys.parameters AS p
+JOIN sys.objects AS o ON o.object_id = p.object_id
+JOIN sys.schemas AS s ON s.schema_id = o.schema_id
+JOIN sys.types AS t ON t.user_type_id = p.user_type_id
+WHERE o.type IN ('P','FN','IF','TF') AND o.is_ms_shipped = 0 AND p.parameter_id > 0
+ORDER BY s.name, o.name, p.parameter_id;";
 
         public Task<DbMetadata> LoadAsync(MetadataRequest request, CancellationToken cancellationToken)
         {
@@ -127,6 +141,7 @@ ORDER BY s.name, o.name;";
             var columnRows = new List<MetadataAssembler.ColumnRow>();
             var fkRows = new List<MetadataAssembler.ForeignKeyColumnRow>();
             var objectRows = new List<MetadataAssembler.ObjectRow>();
+            var paramRows = new List<MetadataAssembler.ParameterRow>();
 
             while (reader.Read())
                 tables.Add(new TableEntry(reader.GetString(0), reader.GetString(1)));
@@ -153,9 +168,15 @@ ORDER BY s.name, o.name;";
                 objectRows.Add(new MetadataAssembler.ObjectRow(
                     reader.GetString(0), reader.GetString(1), reader.GetString(2)));
 
-            DbMetadata metadata = MetadataAssembler.Assemble(tables, schemas, columnRows, fkRows, objectRows);
+            reader.NextResult();
+            while (reader.Read())
+                paramRows.Add(new MetadataAssembler.ParameterRow(
+                    reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                    reader.GetString(3), reader.GetBoolean(4), reader.GetInt32(5)));
+
+            DbMetadata metadata = MetadataAssembler.Assemble(tables, schemas, columnRows, fkRows, objectRows, paramRows);
             Log.Info($"Metadata carregada: {metadata.Schemas.Count} schema(s), {metadata.Tables.Count} tabela(s), " +
-                     $"{columnRows.Count} coluna(s), {fkRows.Count} linha(s) de FK, {objectRows.Count} objeto(s).");
+                     $"{columnRows.Count} coluna(s), {fkRows.Count} linha(s) de FK, {objectRows.Count} objeto(s), {paramRows.Count} parametro(s).");
             return metadata;
         }
     }

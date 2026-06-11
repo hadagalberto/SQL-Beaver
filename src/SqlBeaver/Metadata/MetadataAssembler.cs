@@ -57,6 +57,26 @@ namespace SqlBeaver.Metadata
             }
         }
 
+        public sealed class ParameterRow
+        {
+            public string Schema   { get; }
+            public string Object   { get; }
+            public string Name     { get; }
+            public string SqlType  { get; }
+            public bool   IsOutput { get; }
+            public int    Ordinal  { get; }
+
+            public ParameterRow(string schema, string @object, string name, string sqlType, bool isOutput, int ordinal)
+            {
+                Schema   = schema;
+                Object   = @object;
+                Name     = name;
+                SqlType  = sqlType;
+                IsOutput = isOutput;
+                Ordinal  = ordinal;
+            }
+        }
+
         public static DbMetadata Assemble(
             IReadOnlyList<TableEntry> tables,
             IReadOnlyList<string> schemas,
@@ -70,6 +90,40 @@ namespace SqlBeaver.Metadata
             IReadOnlyList<ColumnRow> columnRows,
             IReadOnlyList<ForeignKeyColumnRow> foreignKeyRows,
             IReadOnlyList<ObjectRow> objectRows)
+            => Assemble(tables, schemas, columnRows, foreignKeyRows, objectRows, new ParameterRow[0]);
+
+        public static IReadOnlyDictionary<string, IReadOnlyList<ParameterEntry>> AssembleParameters(
+            IReadOnlyList<ParameterRow> parameterRows)
+        {
+            var result  = new Dictionary<string, IReadOnlyList<ParameterEntry>>(StringComparer.OrdinalIgnoreCase);
+            var buckets = new Dictionary<string, List<ParameterEntry>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (ParameterRow row in parameterRows)
+            {
+                string key = DbMetadata.TableKey(row.Schema, row.Object);
+                if (!buckets.TryGetValue(key, out List<ParameterEntry> bucket))
+                {
+                    bucket = new List<ParameterEntry>();
+                    buckets[key] = bucket;
+                    result[key]  = bucket;
+                }
+                bucket.Add(new ParameterEntry(row.Name, row.SqlType, row.IsOutput, row.Ordinal));
+            }
+
+            // garantir ordem por Ordinal dentro de cada objeto
+            foreach (var bucket in buckets.Values)
+                bucket.Sort((a, b) => a.Ordinal.CompareTo(b.Ordinal));
+
+            return result;
+        }
+
+        public static DbMetadata Assemble(
+            IReadOnlyList<TableEntry> tables,
+            IReadOnlyList<string> schemas,
+            IReadOnlyList<ColumnRow> columnRows,
+            IReadOnlyList<ForeignKeyColumnRow> foreignKeyRows,
+            IReadOnlyList<ObjectRow> objectRows,
+            IReadOnlyList<ParameterRow> parameterRows)
         {
             var columnsByTable = new Dictionary<string, IReadOnlyList<ColumnEntry>>(StringComparer.OrdinalIgnoreCase);
             var columnBuckets = new Dictionary<string, List<ColumnEntry>>(StringComparer.OrdinalIgnoreCase);
@@ -127,7 +181,10 @@ namespace SqlBeaver.Metadata
                 objects.Add(new ObjectEntry(row.Schema, row.Name, type));
             }
 
-            return new DbMetadata(schemas, tables, columnsByTable, foreignKeysByTable, objects);
+            IReadOnlyDictionary<string, IReadOnlyList<ParameterEntry>> parametersByObject =
+                AssembleParameters(parameterRows);
+
+            return new DbMetadata(schemas, tables, columnsByTable, foreignKeysByTable, objects, parametersByObject);
         }
 
         private static void AddFk(

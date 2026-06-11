@@ -15,7 +15,8 @@ namespace SqlBeaver.Analysis
         private static readonly string[] FromKeywords = { "FROM", "INTO", "UPDATE" };
         private static readonly string[] ColumnKeywords = { "SELECT", "WHERE", "ON", "AND", "OR", "HAVING", "BY", "SET",
                                                              "CASE", "WHEN", "THEN", "ELSE", "IN", "LIKE", "BETWEEN", "NOT" };
-        private static readonly string[] BlockedKeywords = { "EXEC", "EXECUTE", "USE", "GO", "AS", "DECLARE", "PROC", "PROCEDURE" };
+        private static readonly string[] BlockedKeywords = { "GO", "AS", "DECLARE", "PROC", "PROCEDURE" };
+        private static readonly string[] ExecKeywords   = { "EXEC", "EXECUTE" };
 
         public static SqlContext Analyze(string text, int caretPosition)
         {
@@ -85,6 +86,12 @@ namespace SqlBeaver.Analysis
 
             if (hasWhitespaceGap && IsAny(previousWord, BlockedKeywords))
                 return SqlContext.None;
+
+            if (hasWhitespaceGap && IsAny(previousWord, ExecKeywords))
+                return new SqlContext(SqlContextKind.AfterExec, null, partial, partialStart, previousWord.ToUpperInvariant());
+
+            if (hasWhitespaceGap && string.Equals(previousWord, "USE", StringComparison.OrdinalIgnoreCase))
+                return new SqlContext(SqlContextKind.AfterUse, null, partial, partialStart, "USE");
 
             // Operador de comparação/aritmético antes do cursor (sem palavra anterior):
             // = < > ! + / % → ColumnContext. Excluído: '*' (SELECT *) e '-' (ambiguidade negativo/comentário).

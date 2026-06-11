@@ -23,6 +23,8 @@ namespace SqlBeaver.Metadata
             new Dictionary<string, IReadOnlyList<ForeignKeyEntry>>();
         private static readonly IReadOnlyList<ObjectEntry> EmptyObjects =
             new ObjectEntry[0];
+        private static readonly IReadOnlyDictionary<string, IReadOnlyList<ParameterEntry>> EmptyParameters =
+            new Dictionary<string, IReadOnlyList<ParameterEntry>>();
 
         public IReadOnlyList<string> Schemas { get; }
         public IReadOnlyList<TableEntry> Tables { get; }
@@ -32,6 +34,8 @@ namespace SqlBeaver.Metadata
         public IReadOnlyDictionary<string, IReadOnlyList<ForeignKeyEntry>> ForeignKeysByTable { get; }
         /// <summary>Objetos do banco (procedures, views, functions) excluindo tabelas e sys.</summary>
         public IReadOnlyList<ObjectEntry> Objects { get; }
+        /// <summary>Parâmetros por objeto. Chave: TableKey(schema, objeto). Comparador OrdinalIgnoreCase.</summary>
+        public IReadOnlyDictionary<string, IReadOnlyList<ParameterEntry>> ParametersByObject { get; }
 
         public DbMetadata(IReadOnlyList<string> schemas, IReadOnlyList<TableEntry> tables)
             : this(schemas, tables, EmptyColumns, EmptyForeignKeys)
@@ -53,12 +57,24 @@ namespace SqlBeaver.Metadata
             IReadOnlyDictionary<string, IReadOnlyList<ColumnEntry>> columnsByTable,
             IReadOnlyDictionary<string, IReadOnlyList<ForeignKeyEntry>> foreignKeysByTable,
             IReadOnlyList<ObjectEntry> objects)
+            : this(schemas, tables, columnsByTable, foreignKeysByTable, objects, EmptyParameters)
+        {
+        }
+
+        public DbMetadata(
+            IReadOnlyList<string> schemas,
+            IReadOnlyList<TableEntry> tables,
+            IReadOnlyDictionary<string, IReadOnlyList<ColumnEntry>> columnsByTable,
+            IReadOnlyDictionary<string, IReadOnlyList<ForeignKeyEntry>> foreignKeysByTable,
+            IReadOnlyList<ObjectEntry> objects,
+            IReadOnlyDictionary<string, IReadOnlyList<ParameterEntry>> parametersByObject)
         {
             Schemas = schemas;
             Tables = tables;
             ColumnsByTable = columnsByTable;
             ForeignKeysByTable = foreignKeysByTable;
             Objects = objects ?? EmptyObjects;
+            ParametersByObject = parametersByObject ?? EmptyParameters;
         }
 
         public static string TableKey(string schema, string table) => schema + "." + table;

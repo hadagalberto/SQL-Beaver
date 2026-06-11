@@ -152,5 +152,109 @@ namespace SqlBeaver.Tests
                 new List<MetadataAssembler.ForeignKeyColumnRow>());
             Assert.Empty(md4.Objects);
         }
+
+        // --- ParameterEntry / ParametersByObject tests ---
+
+        [Fact]
+        public void Parameters_AreGroupedByObjectKey()
+        {
+            var paramRows = new List<MetadataAssembler.ParameterRow>
+            {
+                new MetadataAssembler.ParameterRow("dbo", "sp_Foo", "@Id",   "int",          false, 1),
+                new MetadataAssembler.ParameterRow("dbo", "sp_Foo", "@Nome", "varchar(100)", false, 2),
+                new MetadataAssembler.ParameterRow("dbo", "sp_Bar", "@Val",  "int",          false, 1),
+            };
+
+            DbMetadata md = MetadataAssembler.Assemble(Tables, Schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>(),
+                new List<MetadataAssembler.ObjectRow>(),
+                paramRows);
+
+            Assert.True(md.ParametersByObject.ContainsKey("dbo.sp_Foo"));
+            Assert.Equal(2, md.ParametersByObject["dbo.sp_Foo"].Count);
+            Assert.Equal("@Id",   md.ParametersByObject["dbo.sp_Foo"][0].Name);
+            Assert.Equal("@Nome", md.ParametersByObject["dbo.sp_Foo"][1].Name);
+            Assert.Single(md.ParametersByObject["dbo.sp_Bar"]);
+        }
+
+        [Fact]
+        public void Parameters_OrderedByOrdinal()
+        {
+            // rows chegam fora de ordem
+            var paramRows = new List<MetadataAssembler.ParameterRow>
+            {
+                new MetadataAssembler.ParameterRow("dbo", "sp_Foo", "@C", "int", false, 3),
+                new MetadataAssembler.ParameterRow("dbo", "sp_Foo", "@A", "int", false, 1),
+                new MetadataAssembler.ParameterRow("dbo", "sp_Foo", "@B", "int", false, 2),
+            };
+
+            DbMetadata md = MetadataAssembler.Assemble(Tables, Schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>(),
+                new List<MetadataAssembler.ObjectRow>(),
+                paramRows);
+
+            IReadOnlyList<ParameterEntry> ps = md.ParametersByObject["dbo.sp_Foo"];
+            Assert.Equal("@A", ps[0].Name);
+            Assert.Equal("@B", ps[1].Name);
+            Assert.Equal("@C", ps[2].Name);
+        }
+
+        [Fact]
+        public void Parameters_OutputFlag_Preserved()
+        {
+            var paramRows = new List<MetadataAssembler.ParameterRow>
+            {
+                new MetadataAssembler.ParameterRow("dbo", "sp_Foo", "@In",  "int", false, 1),
+                new MetadataAssembler.ParameterRow("dbo", "sp_Foo", "@Out", "int", true,  2),
+            };
+
+            DbMetadata md = MetadataAssembler.Assemble(Tables, Schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>(),
+                new List<MetadataAssembler.ObjectRow>(),
+                paramRows);
+
+            IReadOnlyList<ParameterEntry> ps = md.ParametersByObject["dbo.sp_Foo"];
+            Assert.False(ps[0].IsOutput);
+            Assert.True(ps[1].IsOutput);
+        }
+
+        [Fact]
+        public void Parameters_Empty_ParametersByObjectIsEmpty()
+        {
+            DbMetadata md = MetadataAssembler.Assemble(Tables, Schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>(),
+                new List<MetadataAssembler.ObjectRow>(),
+                new List<MetadataAssembler.ParameterRow>());
+
+            Assert.Empty(md.ParametersByObject);
+        }
+
+        [Fact]
+        public void CompatAssemble_5Args_ParametersByObjectIsEmpty()
+        {
+            DbMetadata md = MetadataAssembler.Assemble(Tables, Schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>(),
+                new List<MetadataAssembler.ObjectRow>());
+
+            Assert.Empty(md.ParametersByObject);
+        }
+
+        [Fact]
+        public void CompatCtors_ParametersByObjectIsEmpty()
+        {
+            var md2 = new DbMetadata(Schemas, Tables);
+            Assert.Empty(md2.ParametersByObject);
+
+            var md5 = new DbMetadata(Schemas, Tables,
+                new Dictionary<string, IReadOnlyList<ColumnEntry>>(),
+                new Dictionary<string, IReadOnlyList<ForeignKeyEntry>>(),
+                new ObjectEntry[0]);
+            Assert.Empty(md5.ParametersByObject);
+        }
     }
 }
