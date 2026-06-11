@@ -17,6 +17,18 @@
     <ProjectCapability Include="CreateVsixContainer" />
   </ItemGroup>
 
+  <!-- VSCT compila só no MSBuild completo (mesmo gate do VSIX); no `dotnet build` é só conteúdo. -->
+  <ItemGroup Condition="'$(IsFullMsBuild)' == 'true'">
+    <AvailableItemName Include="VSCTCompile" />
+    <VSCTCompile Include="VSCommandTable.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+    <None Remove="VSCommandTable.vsct" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(IsFullMsBuild)' != 'true'">
+    <None Include="VSCommandTable.vsct" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.0" />
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.128.0" />

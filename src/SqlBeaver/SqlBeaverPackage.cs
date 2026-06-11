@@ -16,6 +16,7 @@ namespace SqlBeaver
     /// </summary>
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.ShellInitialized_string, PackageAutoLoadFlags.BackgroundLoad)]
+    [ProvideMenuResource("Menus.ctmenu", 1)]
     [Guid(PackageGuidString)]
     public sealed class SqlBeaverPackage : ToolkitPackage
     {
@@ -28,6 +29,30 @@ namespace SqlBeaver
             Grid.GridCommandBarMenu.Initialize();
             Grid.EditorCommandBarMenu.Initialize();
             Guard.ExecuteGuard.Initialize();
+
+            if (await GetServiceAsync(typeof(System.ComponentModel.Design.IMenuCommandService))
+                is System.ComponentModel.Design.IMenuCommandService menuService)
+            {
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.FormatDocument, () => Commands.EditorCommands.FormatDocument());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.FindObject, () => Commands.EditorCommands.FindObject());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.GoToDefinition, () => Commands.EditorCommands.GoToDefinition());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.FindReferences, () => Commands.EditorCommands.FindReferences());
+                Log.Info("Comandos nomeados registrados (menu Tools > SQL Beaver, toolbar e atalhos).");
+            }
+            else
+            {
+                Log.Info("IMenuCommandService indisponível — comandos nomeados/atalhos desabilitados.");
+            }
+        }
+
+        private static void AddCommand(System.ComponentModel.Design.IMenuCommandService service, int id, Action handler)
+        {
+            var commandId = new System.ComponentModel.Design.CommandID(Commands.SqlBeaverCommandIds.CommandSetGuid, id);
+            service.AddCommand(new Microsoft.VisualStudio.Shell.OleMenuCommand((s, e) =>
+            {
+                try { handler(); }
+                catch (Exception ex) { Diagnostics.Log.Error("Comando SQL Beaver", ex); }
+            }, commandId));
         }
     }
 }

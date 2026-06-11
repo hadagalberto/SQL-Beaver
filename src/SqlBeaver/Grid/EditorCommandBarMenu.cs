@@ -6,7 +6,6 @@ using Microsoft.VisualStudio.Shell;
 using SqlBeaver.Connection;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Metadata;
-using SqlBeaver.Navigation;
 using SqlBeaver.Refactoring;
 
 namespace SqlBeaver.Grid
@@ -109,81 +108,8 @@ namespace SqlBeaver.Grid
 
         private static void OnFormatDocument(CommandBarButton ctrl, ref bool cancelDefault)
         {
-            try
-            {
-                ThreadHelper.ThrowIfNotOnUIThread();
-                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
-                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
-                if (doc == null) { ShowStatus("Format: nenhum documento ativo."); return; }
-
-                bool hasSelection = !doc.Selection.IsEmpty;
-                string original = hasSelection
-                    ? doc.Selection.Text
-                    : doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
-
-                if (string.IsNullOrWhiteSpace(original)) { ShowStatus("Format: nada para formatar."); return; }
-
-                if (!Formatting.SqlFormatterService.TryFormat(original, out string formatted, out string error, out bool containsComments))
-                {
-                    ShowStatus("não formatado: " + error);
-                    Log.Info("Format Document abortado: " + error);
-                    return;
-                }
-
-                if (containsComments)
-                {
-                    var owner = new System.Windows.Forms.NativeWindow();
-                    owner.AssignHandle((IntPtr)(int)dte.MainWindow.HWnd);
-                    System.Windows.Forms.DialogResult keep;
-                    try
-                    {
-                        keep = System.Windows.Forms.MessageBox.Show(
-                            owner,
-                            "O script contém comentários e a formatação vai REMOVÊ-LOS.\r\n\r\nFormatar mesmo assim?",
-                            "SQL Beaver — Format Document",
-                            System.Windows.Forms.MessageBoxButtons.YesNo,
-                            System.Windows.Forms.MessageBoxIcon.Warning,
-                            System.Windows.Forms.MessageBoxDefaultButton.Button2);
-                    }
-                    finally
-                    {
-                        owner.ReleaseHandle();
-                    }
-                    if (keep != System.Windows.Forms.DialogResult.Yes)
-                    {
-                        ShowStatus("formatação cancelada (comentários seriam removidos).");
-                        return;
-                    }
-                }
-
-                dte.UndoContext.Open("SQL Beaver Format Document");
-                try
-                {
-                    if (hasSelection)
-                    {
-                        doc.Selection.Insert(formatted,
-                            (int)vsInsertFlags.vsInsertFlagsContainNewText);
-                    }
-                    else
-                    {
-                        EditPoint start = doc.StartPoint.CreateEditPoint();
-                        start.ReplaceText(doc.EndPoint, formatted,
-                            (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
-                    }
-                }
-                finally
-                {
-                    dte.UndoContext.Close();
-                }
-
-                ShowStatus("documento formatado.");
-                Log.Info("Format Document aplicado" + (hasSelection ? " (seleção)." : " (documento inteiro)."));
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Format Document", ex);
-                ShowStatus("falha no Format Document — veja Output > SQL Beaver");
-            }
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Commands.EditorCommands.FormatDocument();
         }
 
         private static void OnRefreshCache(CommandBarButton ctrl, ref bool cancelDefault)
@@ -218,44 +144,20 @@ namespace SqlBeaver.Grid
 
         private static void OnGoToDefinition(CommandBarButton ctrl, ref bool cancelDefault)
         {
-            try
-            {
-                ThreadHelper.ThrowIfNotOnUIThread();
-                DefinitionService.GoToDefinition();
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Ir para definição", ex);
-                ShowStatus("falha em Ir para definição — veja Output > SQL Beaver");
-            }
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Commands.EditorCommands.GoToDefinition();
         }
 
         private static void OnFindObject(CommandBarButton ctrl, ref bool cancelDefault)
         {
-            try
-            {
-                ThreadHelper.ThrowIfNotOnUIThread();
-                FindObjectDialog.Show();
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Localizar objeto", ex);
-                ShowStatus("falha em Localizar objeto — veja Output > SQL Beaver");
-            }
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Commands.EditorCommands.FindObject();
         }
 
         private static void OnFindReferences(CommandBarButton ctrl, ref bool cancelDefault)
         {
-            try
-            {
-                ThreadHelper.ThrowIfNotOnUIThread();
-                DefinitionService.FindReferences();
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Localizar referências", ex);
-                ShowStatus("falha em Localizar referências — veja Output > SQL Beaver");
-            }
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Commands.EditorCommands.FindReferences();
         }
 
         // ---------------------------------------------------------------
