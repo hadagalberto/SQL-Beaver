@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="SqlBeaver.E7F4C9D2-3B61-4A8E-9C57-D2A41B6F8E03" Version="1.1.0" Language="en-US" Publisher="Hadagalberto" />
+    <Identity Id="SqlBeaver.E7F4C9D2-3B61-4A8E-9C57-D2A41B6F8E03" Version="1.2.0" Language="en-US" Publisher="Hadagalberto" />
     <DisplayName>SQL Beaver</DisplayName>
-    <Description>Produtividade T-SQL para o SSMS 22: autocomplete de tabelas/colunas/JOIN por FK, snippets navegáveis, Format Document, lint ao vivo, geração de código (Script as / CRUD), cores por ambiente, navegação, refatoração, restauração de sessão e ranking por uso.</Description>
+    <Description>Produtividade T-SQL para o SSMS 22: autocomplete (tabelas/colunas/JOIN por FK, #temp/@tabela/CTE, EXEC, palavras-chave), executar statement atual, QuickInfo no hover, snippets navegáveis, Format Document com estilos nomeados, lint ao vivo (20 regras), geração de código (Script as / CRUD), refatoração (inline EXEC, encapsular, casing), cores por ambiente, navegação, restauração de sessão e ranking por uso.</Description>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[22.0,)">
