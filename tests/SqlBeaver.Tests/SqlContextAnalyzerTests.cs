@@ -28,7 +28,7 @@ namespace SqlBeaver.Tests
         public void ClosedBlockComment_DoesNotBlock()
         {
             var ctx = Analyze("/* comentário */ SELECT Ped");
-            Assert.Equal(SqlContextKind.FreeIdentifier, ctx.Kind);
+            Assert.Equal(SqlContextKind.ColumnContext, ctx.Kind);
             Assert.Equal("Ped", ctx.Partial);
         }
 
@@ -36,17 +36,17 @@ namespace SqlBeaver.Tests
         public void ClosedString_DoesNotBlock()
         {
             var ctx = Analyze("SELECT 'ok', Ped");
-            Assert.Equal(SqlContextKind.FreeIdentifier, ctx.Kind);
+            Assert.Equal(SqlContextKind.ColumnContext, ctx.Kind);
             Assert.Equal("Ped", ctx.Partial);
         }
 
         // ---- identificador livre ----
 
         [Fact]
-        public void FreeIdentifier_ReturnsPartialAndStart()
+        public void AfterSelect_IsColumnContext()
         {
             var ctx = Analyze("SELECT Ped");
-            Assert.Equal(SqlContextKind.FreeIdentifier, ctx.Kind);
+            Assert.Equal(SqlContextKind.ColumnContext, ctx.Kind);
             Assert.Equal("Ped", ctx.Partial);
             Assert.Equal(7, ctx.PartialStart);
         }
@@ -77,8 +77,6 @@ namespace SqlBeaver.Tests
         [InlineData("SELECT * FROM ")]
         [InlineData("select * from ")] // case-insensitive
         [InlineData("SELECT * FROM\n    ")] // quebra de linha como separador
-        [InlineData("SELECT * FROM a INNER JOIN ")]
-        [InlineData("SELECT * FROM a LEFT JOIN ")]
         [InlineData("INSERT INTO ")]
         [InlineData("UPDATE ")]
         [InlineData("DELETE FROM ")]
@@ -117,33 +115,33 @@ namespace SqlBeaver.Tests
             Assert.Equal(5, ctx.PartialStart);
         }
 
-        // ---- schema-dot ----
+        // ---- dot ----
 
         [Fact]
-        public void AfterSchemaDot_EmptyPartial()
+        public void AfterDot_EmptyPartial()
         {
             var ctx = Analyze("SELECT * FROM dbo.");
-            Assert.Equal(SqlContextKind.AfterSchemaDot, ctx.Kind);
-            Assert.Equal("dbo", ctx.SchemaPrefix);
+            Assert.Equal(SqlContextKind.AfterDot, ctx.Kind);
+            Assert.Equal("dbo", ctx.DotPrefix);
             Assert.Equal("", ctx.Partial);
         }
 
         [Fact]
-        public void AfterSchemaDot_WithPartial()
+        public void AfterDot_WithPartial()
         {
             var ctx = Analyze("SELECT * FROM dbo.Ped");
-            Assert.Equal(SqlContextKind.AfterSchemaDot, ctx.Kind);
-            Assert.Equal("dbo", ctx.SchemaPrefix);
+            Assert.Equal(SqlContextKind.AfterDot, ctx.Kind);
+            Assert.Equal("dbo", ctx.DotPrefix);
             Assert.Equal("Ped", ctx.Partial);
             Assert.Equal(18, ctx.PartialStart);
         }
 
         [Fact]
-        public void AfterBracketedSchemaDot_ExtractsSchema()
+        public void AfterBracketedDot_ExtractsPrefix()
         {
             var ctx = Analyze("SELECT * FROM [dbo].");
-            Assert.Equal(SqlContextKind.AfterSchemaDot, ctx.Kind);
-            Assert.Equal("dbo", ctx.SchemaPrefix);
+            Assert.Equal(SqlContextKind.AfterDot, ctx.Kind);
+            Assert.Equal("dbo", ctx.DotPrefix);
         }
 
         [Fact]
@@ -197,6 +195,59 @@ namespace SqlBeaver.Tests
         public void AfterBlockedKeyword_ReturnsNone(string text)
         {
             Assert.Equal(SqlContextKind.None, Analyze(text).Kind);
+        }
+
+        // ---- v2: contexto de colunas ----
+
+        [Theory]
+        [InlineData("SELECT ")]
+        [InlineData("SELECT No")]
+        [InlineData("WHERE ")]
+        [InlineData("WHERE Nome")]
+        [InlineData("ORDER BY ")]
+        [InlineData("GROUP BY Da")]
+        [InlineData("HAVING ")]
+        [InlineData("UPDATE T SET ")]
+        [InlineData("ON p")]
+        [InlineData("WHERE a = 1 AND ")]
+        [InlineData("WHERE a = 1 OR Va")]
+        [InlineData("SELECT a, b, No")]   // vírgula nível 0
+        public void ColumnTriggers_ReturnColumnContext(string text)
+        {
+            Assert.Equal(SqlContextKind.ColumnContext, Analyze(text).Kind);
+        }
+
+        [Fact]
+        public void CommaInsideParens_IsNotColumnContext()
+        {
+            // vírgula dentro de IN (...): não é a lista do SELECT
+            var ctx = Analyze("WHERE x IN (a, Pe");
+            Assert.Equal(SqlContextKind.FreeIdentifier, ctx.Kind);
+            Assert.Equal("Pe", ctx.Partial);
+        }
+
+        // ---- v2: JOIN separado de FROM ----
+
+        [Theory]
+        [InlineData("SELECT * FROM a INNER JOIN ")]
+        [InlineData("SELECT * FROM a LEFT JOIN Pe")]
+        [InlineData("join ")]
+        public void AfterJoin_ReturnsAfterJoinKind(string text)
+        {
+            var ctx = Analyze(text);
+            Assert.Equal(SqlContextKind.AfterJoin, ctx.Kind);
+            Assert.Equal("JOIN", ctx.TriggerKeyword);
+        }
+
+        [Theory]
+        [InlineData("SELECT * FROM ", "FROM")]
+        [InlineData("INSERT INTO ", "INTO")]
+        [InlineData("UPDATE ", "UPDATE")]
+        public void AfterFromJoin_CarriesTriggerKeyword(string text, string keyword)
+        {
+            var ctx = Analyze(text);
+            Assert.Equal(SqlContextKind.AfterFromJoin, ctx.Kind);
+            Assert.Equal(keyword, ctx.TriggerKeyword);
         }
     }
 }

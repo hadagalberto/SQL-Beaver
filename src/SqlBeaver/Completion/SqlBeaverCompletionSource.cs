@@ -149,11 +149,11 @@ namespace SqlBeaver.Completion
         {
             var items = ImmutableArray.CreateBuilder<CompletionItem>();
 
-            if (context.Kind == SqlContextKind.AfterSchemaDot)
+            if (context.Kind == SqlContextKind.AfterDot)
             {
                 foreach (TableEntry table in metadata.Tables)
                 {
-                    if (string.Equals(table.Schema, context.SchemaPrefix, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(table.Schema, context.DotPrefix, StringComparison.OrdinalIgnoreCase))
                         items.Add(new CompletionItem(SqlIdentifier.Bracket(table.Name), this, TableIcon));
                 }
                 return items.ToImmutable();
@@ -193,8 +193,8 @@ namespace SqlBeaver.Completion
                 return context;
 
             // reprojetar PartialStart da janela para coordenadas do snapshot
-            return new SqlContext(context.Kind, context.SchemaPrefix, context.Partial,
-                context.PartialStart + windowStart);
+            return new SqlContext(context.Kind, context.DotPrefix, context.Partial,
+                context.PartialStart + windowStart, context.TriggerKeyword);
         }
     }
 }

@@ -12,7 +12,8 @@ namespace SqlBeaver.Analysis
         // antes da janela é um falso negativo aceito (popup supérfluo, nunca crash).
         private const int MaxAnalysisLength = 64 * 1024;
 
-        private static readonly string[] TableContextKeywords = { "FROM", "JOIN", "INTO", "UPDATE" };
+        private static readonly string[] FromKeywords = { "FROM", "INTO", "UPDATE" };
+        private static readonly string[] ColumnKeywords = { "SELECT", "WHERE", "ON", "AND", "OR", "HAVING", "BY", "SET" };
         private static readonly string[] BlockedKeywords = { "EXEC", "EXECUTE", "USE", "GO", "AS", "DECLARE", "PROC", "PROCEDURE" };
 
         public static SqlContext Analyze(string text, int caretPosition)
@@ -23,7 +24,8 @@ namespace SqlBeaver.Analysis
 
             int start = caretPosition > MaxAnalysisLength ? caretPosition - MaxAnalysisLength : 0;
 
-            if (IsInsideCommentOrString(text, start, caretPosition))
+            ScanState state = Scan(text, start, caretPosition);
+            if (state.InsideCommentOrString)
                 return SqlContext.None;
 
             // identificador parcial imediatamente antes do cursor
@@ -38,13 +40,13 @@ namespace SqlBeaver.Analysis
 
             int i = partialStart - 1;
 
-            // caso "schema.parcial"
+            // caso "prefix.parcial"
             if (i >= start && text[i] == '.')
             {
-                string schema = ReadIdentifierBackwards(text, start, i - 1);
-                return schema.Length == 0
+                string prefix = ReadIdentifierBackwards(text, start, i - 1);
+                return prefix.Length == 0
                     ? SqlContext.None
-                    : new SqlContext(SqlContextKind.AfterSchemaDot, schema, partial, partialStart);
+                    : new SqlContext(SqlContextKind.AfterDot, prefix, partial, partialStart);
             }
 
             // palavra-chave anterior (separada por whitespace)
@@ -53,22 +55,41 @@ namespace SqlBeaver.Analysis
                 i--;
             bool hasWhitespaceGap = i < beforeWhitespace;
 
+            // vírgula no nível 0 → ColumnContext; vírgula dentro de parênteses → FreeIdentifier
+            if (i >= start && text[i] == ',')
+            {
+                return state.ParenDepth == 0
+                    ? new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart)
+                    : FreeIdentifierOrNone(partial, partialStart);
+            }
+
             int wordEnd = i + 1;
             while (i >= start && IsIdentifierChar(text[i]))
                 i--;
             string previousWord = text.Substring(i + 1, wordEnd - (i + 1));
 
-            if (hasWhitespaceGap && IsAny(previousWord, TableContextKeywords))
-                return new SqlContext(SqlContextKind.AfterFromJoin, null, partial, partialStart);
+            if (hasWhitespaceGap && IsAny(previousWord, FromKeywords))
+                return new SqlContext(SqlContextKind.AfterFromJoin, null, partial, partialStart,
+                    previousWord.ToUpperInvariant());
+
+            if (hasWhitespaceGap && string.Equals(previousWord, "JOIN", StringComparison.OrdinalIgnoreCase))
+                return new SqlContext(SqlContextKind.AfterJoin, null, partial, partialStart, "JOIN");
+
+            if (hasWhitespaceGap && IsAny(previousWord, ColumnKeywords))
+                return new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart);
 
             if (hasWhitespaceGap && IsAny(previousWord, BlockedKeywords))
                 return SqlContext.None;
 
+            return FreeIdentifierOrNone(partial, partialStart);
+        }
+
+        private static SqlContext FreeIdentifierOrNone(string partial, int partialStart)
+        {
             if (partial.Length == 0)
                 return SqlContext.None;
 
-            // Digitação livre: silêncio enquanto o parcial ainda pode ser uma keyword
-            // (digitar "sele" a caminho de SELECT não deve sugerir tabelas).
+            // Digitação livre: silêncio enquanto o parcial ainda pode ser uma keyword.
             if (SqlKeywords.IsPrefixOfAny(partial))
                 return SqlContext.None;
 
@@ -80,9 +101,19 @@ namespace SqlBeaver.Analysis
             => IsInsideCommentOrString(text, 0, position);
 
         internal static bool IsInsideCommentOrString(string text, int start, int end)
+            => Scan(text, start, end).InsideCommentOrString;
+
+        internal struct ScanState
+        {
+            public bool InsideCommentOrString;
+            public int ParenDepth;
+        }
+
+        internal static ScanState Scan(string text, int start, int end)
         {
             int blockCommentDepth = 0;
             bool inLineComment = false, inString = false, inBracket = false, inQuotedIdent = false;
+            int parenDepth = 0;
 
             int i = start;
             while (i < end)
@@ -127,10 +158,16 @@ namespace SqlBeaver.Analysis
                 if (c == '\'') { inString = true; i++; continue; }
                 if (c == '[') { inBracket = true; i++; continue; }
                 if (c == '"') { inQuotedIdent = true; i++; continue; }
+                if (c == '(') { parenDepth++; i++; continue; }
+                if (c == ')') { if (parenDepth > 0) parenDepth--; i++; continue; }
                 i++;
             }
 
-            return inLineComment || blockCommentDepth > 0 || inString || inBracket || inQuotedIdent;
+            return new ScanState
+            {
+                InsideCommentOrString = inLineComment || blockCommentDepth > 0 || inString || inBracket || inQuotedIdent,
+                ParenDepth = parenDepth
+            };
         }
 
         private static string ReadIdentifierBackwards(string text, int start, int end)
