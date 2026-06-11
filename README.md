@@ -105,6 +105,12 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 - **Rename alias / @variável** — diálogo de novo nome; substituição
   token-aware no escopo do statement (alias) ou do batch entre GOs (variável).
 
+### Conforto/Interface
+
+- Realça todas as ocorrências do identificador sob o cursor (word-boundary, case-insensitive,
+  ignora strings/comentários) e o par **BEGIN…END** correspondente (incluindo BEGIN TRY/END TRY
+  e BEGIN CATCH/END CATCH), com debounce de 150 ms.
+
 ### Interface
 
 - Menu **Tools > SQL Beaver** e toolbar **SQL Beaver** com os principais comandos.
