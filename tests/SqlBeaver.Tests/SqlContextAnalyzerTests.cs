@@ -249,5 +249,27 @@ namespace SqlBeaver.Tests
             Assert.Equal(SqlContextKind.AfterFromJoin, ctx.Kind);
             Assert.Equal(keyword, ctx.TriggerKeyword);
         }
+
+        // ---- vírgula em lista de FROM: contexto de TABELA, não de coluna ----
+
+        [Theory]
+        [InlineData("SELECT * FROM A a, ")]
+        [InlineData("SELECT * FROM Cadastro.A a, Pe")]
+        [InlineData("SELECT * FROM [Meu Schema].[A] x, B b, ")]
+        public void CommaInFromList_ReturnsAfterFromJoin(string text)
+        {
+            var ctx = Analyze(text);
+            Assert.Equal(SqlContextKind.AfterFromJoin, ctx.Kind);
+            Assert.Equal("FROM", ctx.TriggerKeyword);
+        }
+
+        [Theory]
+        [InlineData("SELECT a + b, ")]      // expressão antes da vírgula: lista do SELECT
+        [InlineData("SELECT 'x', ")]        // literal antes da vírgula
+        [InlineData("SELECT f(a), No")]     // parêntese fechado antes da vírgula
+        public void CommaAfterExpression_StaysColumnContext(string text)
+        {
+            Assert.Equal(SqlContextKind.ColumnContext, Analyze(text).Kind);
+        }
     }
 }

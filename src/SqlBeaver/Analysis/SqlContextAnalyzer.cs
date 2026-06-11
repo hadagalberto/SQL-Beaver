@@ -55,12 +55,15 @@ namespace SqlBeaver.Analysis
                 i--;
             bool hasWhitespaceGap = i < beforeWhitespace;
 
-            // vírgula no nível 0 → ColumnContext; vírgula dentro de parênteses → FreeIdentifier
+            // vírgula no nível 0 → ColumnContext ou AfterFromJoin; vírgula dentro de parênteses → FreeIdentifier
             if (i >= start && text[i] == ',')
             {
-                return state.ParenDepth == 0
-                    ? new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart)
-                    : FreeIdentifierOrNone(partial, partialStart);
+                if (state.ParenDepth != 0)
+                    return FreeIdentifierOrNone(partial, partialStart);
+
+                return IsCommaInFromList(text, start, i)
+                    ? new SqlContext(SqlContextKind.AfterFromJoin, null, partial, partialStart, "FROM")
+                    : new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart);
             }
 
             int wordEnd = i + 1;
@@ -168,6 +171,49 @@ namespace SqlBeaver.Analysis
                 InsideCommentOrString = inLineComment || blockCommentDepth > 0 || inString || inBracket || inQuotedIdent,
                 ParenDepth = parenDepth
             };
+        }
+
+        // Anda para trás a partir da vírgula consumindo apenas tokens de lista de
+        // tabelas (identificadores, '.', ',', espaços e pares [..]). Se a primeira
+        // keyword encontrada for FROM, a vírgula pertence à lista de tabelas.
+        private static bool IsCommaInFromList(string text, int start, int commaIndex)
+        {
+            int i = commaIndex - 1;
+            while (i >= start)
+            {
+                char c = text[i];
+
+                if (char.IsWhiteSpace(c) || c == ',' || c == '.')
+                {
+                    i--;
+                    continue;
+                }
+
+                if (c == ']')
+                {
+                    int open = text.LastIndexOf('[', i - 1);
+                    if (open < start) return false;
+                    i = open - 1;
+                    continue;
+                }
+
+                if (IsIdentifierChar(c))
+                {
+                    int wordEnd = i;
+                    while (i >= start && IsIdentifierChar(text[i]))
+                        i--;
+                    string word = text.Substring(i + 1, wordEnd - i);
+
+                    if (string.Equals(word, "FROM", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                    if (SqlKeywords.All.Contains(word))
+                        return false; // outra keyword fecha a questão (SELECT, JOIN...)
+                    continue; // identificador comum (tabela/alias): segue andando
+                }
+
+                return false; // quote, parêntese, operador: não é lista de FROM
+            }
+            return false;
         }
 
         private static string ReadIdentifierBackwards(string text, int start, int end)
