@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="SqlBeaver.E7F4C9D2-3B61-4A8E-9C57-D2A41B6F8E03" Version="0.1.0" Language="en-US" Publisher="Hadagalberto" />
+    <Identity Id="SqlBeaver.E7F4C9D2-3B61-4A8E-9C57-D2A41B6F8E03" Version="1.0.0" Language="en-US" Publisher="Hadagalberto" />
     <DisplayName>SQL Beaver</DisplayName>
-    <Description>Autocomplete de tabelas e schemas para o editor de query do SSMS.</Description>
+    <Description>Produtividade T-SQL para o SSMS 22: autocomplete de tabelas/colunas/JOIN por FK, snippets, Format Document, cores por ambiente, navegação, refatoração, restauração de sessão e ranking por uso.</Description>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[22.0,)">
