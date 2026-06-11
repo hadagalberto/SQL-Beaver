@@ -20,6 +20,9 @@ própria janela de query.
   prioridade.
 - **Aliases automáticos** — ao inserir uma tabela em FROM / JOIN o alias é
   sugerido junto.
+- **Procedures e parâmetros** — após `EXEC` sugere as procedures/funções e,
+  ao aceitar, preenche os parâmetros nomeados (`@p = `, com `OUTPUT` marcado).
+- **Bancos após `USE`** — sugere os bancos do servidor da conexão ativa.
 - **Ranking por uso** — as tabelas e JOINs que você mais usa sobem para o topo
   das sugestões (aprendido das execuções).
 - As sugestões também incluem os snippets cadastrados (ver abaixo).
@@ -33,7 +36,9 @@ própria janela de query.
 
 - Faixa colorida no topo do editor identifica o ambiente da conexão ativa
   (Produção, Homologação, Desenvolvimento) com nome, servidor e banco.
-- a própria ABA também é pintada (técnica de árvore visual, sem API pública — se um update do SSMS quebrar, a faixa colorida continua), aba ganha cor ao ser ativada.
+- A própria **aba** também é pintada (via árvore visual, pois o shell não expõe API
+  pública — se um update do SSMS quebrar, a faixa colorida continua funcionando). A aba
+  ganha cor ao ser ativada pela primeira vez.
 - Configurável via **menu Tools > SQL Beaver > Ambientes (cores)…** (ou clique direito no editor):
   abre o editor visual de regras com ListView colorido, botões Adicionar/Editar/Remover/Subir/Descer
   e ColorDialog integrado. As alterações são salvas e aplicadas imediatamente, sem reiniciar o SSMS.
@@ -69,6 +74,9 @@ maiúsculas automaticamente enquanto você digita.
 ### Snippets
 
 - Expansão por Tab (~25 padrões): `ssf`, `st100`, `wh`, `cte`, `btry` e outros.
+- **Placeholders navegáveis** — snippets com `$1$`, `$2$`, ... `$0$` (e o formato
+  `${1:texto padrão}$`) viram campos: após expandir, **Tab** pula para o próximo
+  campo, **Shift+Tab** volta, **Esc** encerra. (`$cursor$` continua valendo como `$0$`.)
 - Personalizável em `%LOCALAPPDATA%\SqlBeaver\snippets.json` — as alterações são
   carregadas no próximo restart do SSMS.
 - Os snippets aparecem no completion junto com tabelas e colunas.
@@ -107,7 +115,7 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 - **Rename alias / @variável** — diálogo de novo nome; substituição
   token-aware no escopo do statement (alias) ou do batch entre GOs (variável).
 
-### Conforto/Interface
+### Conforto no editor
 
 - Realça todas as ocorrências do identificador sob o cursor (word-boundary, case-insensitive,
   ignora strings/comentários) e o par **BEGIN…END** correspondente (incluindo BEGIN TRY/END TRY
@@ -158,13 +166,29 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 
 ## Instalação
 
-1. Build do `SqlBeaver.vsix` (ver "Desenvolvimento" abaixo) — o artefato fica em `dist\SqlBeaver.vsix`.
-2. Feche o SSMS e rode `.\deploy.ps1 -Install` (ou dê duplo clique no `.vsix`).
-3. **Desative o IntelliSense nativo** para não duplicar sugestões:
+> ⚠️ **Passo obrigatório:** desative o IntelliSense nativo do SSMS. O SQL Beaver o
+> **substitui** (inclusive nas palavras-chave); deixá-lo ligado faz as duas fontes
+> competirem e quebra a filtragem do popup.
+
+1. Pré-requisito: **SSMS 22** (amd64). Pegue o `dist\SqlBeaver-X.Y.Z.vsix` (build
+   compartilhável) ou gere o `.vsix` (ver "Desenvolvimento").
+2. Feche o SSMS e **dê duplo clique no `.vsix`** (instala via VSIXInstaller) — ou,
+   em máquina de desenvolvimento, `.\deploy.ps1 -Install`.
+3. **Desative o IntelliSense nativo:**
    `Tools > Options > Text Editor > Transact-SQL > IntelliSense > desmarque "Enable IntelliSense"`.
 4. Abra o SSMS, conecte uma janela de query e digite `SELECT * FROM `.
 
-Diagnóstico: `View > Output > SQL Beaver`.
+Diagnóstico: `View > Output > SQL Beaver`. Se a linha de inicialização mostrar
+"total de instâncias: 2", há **duas cópias instaladas** (efeito de instalar via VSIX
+e via `deploy.ps1`) — rode `.\uninstall.ps1` e reinstale uma vez só.
+
+### Desinstalação
+
+- **Pela UI:** `Extensions > Manage Extensions > Installed > SQL Beaver > Uninstall`,
+  depois reinicie o SSMS.
+- **Pelo script (remove todas as cópias):** feche o SSMS e rode `.\uninstall.ps1`
+  (preserva seus dados em `%LOCALAPPDATA%\SqlBeaver`) ou `.\uninstall.ps1 -PurgeData`
+  (apaga também snippets/ambientes/histórico/sessões/ranking).
 
 ## Desenvolvimento
 
@@ -178,11 +202,11 @@ Diagnóstico: `View > Output > SQL Beaver`.
 - Iteração: build Release → fechar SSMS → `.\deploy.ps1` (copia DLLs e limpa o cache MEF) → abrir SSMS
 - Debug: abrir o SSMS e anexar o debugger ao processo `Ssms.exe` (Debug > Attach to Process)
 
-Design e decisões: `docs/superpowers/specs/2026-06-10-sql-beaver-autocomplete-design.md`.
+Design e decisões: specs em `docs/superpowers/specs/` (v1 autocomplete, v2 colunas/FK/snippets/format,
+v3 ambientes/navegação/refatoração/sessão, v4 geração de código/lint/completion profundo/conforto).
 
 ## Limitações conhecidas
 
-- Procedures e functions fora do completion (roadmap).
 - Digitar `.` com o popup aberto não confirma o item selecionado (roadmap: commit manager com `.`).
 - Identificadores entre `[colchetes]` não disparam sugestões.
 - CTEs e subqueries: o contexto de coluna degrada para "sem sugestão" (somente tabelas diretas do FROM são rastreadas).
