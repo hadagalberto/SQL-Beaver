@@ -5,7 +5,10 @@ using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.CommandBars;
 using Microsoft.VisualStudio.Shell;
+using SqlBeaver.Connection;
+using SqlBeaver.Completion;
 using SqlBeaver.Diagnostics;
+using SqlBeaver.Metadata;
 using SqlBeaver.Scripting;
 
 namespace SqlBeaver.Grid
@@ -21,6 +24,10 @@ namespace SqlBeaver.Grid
 
         // Referências fortes: os handlers COM são coletados pelo GC sem isso.
         private static CommandBarButton _scriptAsInsertButton;
+        private static CommandBarButton _scriptAsSelectButton;
+        private static CommandBarButton _scriptAsUpdateButton;
+        private static CommandBarButton _scriptAsDeleteButton;
+        private static CommandBarButton _scriptAsMergeButton;
         private static CommandBarButton _copyAsInButton;
         private static CommandBarButton _openInExcelButton;
 
@@ -40,7 +47,11 @@ namespace SqlBeaver.Grid
                 CommandBar gridBar = bars[GridContextBarName];
 
                 _scriptAsInsertButton = AddButton(gridBar, "Script as INSERT", OnScriptAsInsert, beginGroup: true);
-                _copyAsInButton       = AddButton(gridBar, "Copy as IN clause", OnCopyAsInClause, beginGroup: false);
+                _scriptAsSelectButton = AddButton(gridBar, "Script as SELECT", OnScriptAsSelect, beginGroup: false);
+                _scriptAsUpdateButton = AddButton(gridBar, "Script as UPDATE", OnScriptAsUpdate, beginGroup: false);
+                _scriptAsDeleteButton = AddButton(gridBar, "Script as DELETE", OnScriptAsDelete, beginGroup: false);
+                _scriptAsMergeButton  = AddButton(gridBar, "Script as MERGE",  OnScriptAsMerge,  beginGroup: false);
+                _copyAsInButton       = AddButton(gridBar, "Copy as IN clause", OnCopyAsInClause, beginGroup: true);
                 _openInExcelButton    = AddButton(gridBar, "Open in Excel", OnOpenInExcel, beginGroup: false);
 
                 Log.Info("Comandos registrados no menu da grid de resultados.");
@@ -134,6 +145,218 @@ namespace SqlBeaver.Grid
             {
                 Log.Error("Script as INSERT", ex);
                 ShowStatus("falha em Script as INSERT — veja Output > SQL Beaver");
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────
+        // Script as SELECT
+        // ──────────────────────────────────────────────────────────────────
+
+        private static void OnScriptAsSelect(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                object grid = ResultsGridAccess.GetFocusedGridControl();
+                if (grid == null) { ShowStatus("nenhuma grid em foco"); return; }
+
+                GridData data = ReadGridData(grid, out string modeMsg);
+                if (data == null) { ShowStatus("falha ao ler a grid"); return; }
+
+                string tableName = TableNameHeuristic.TryExtract(GetActiveQueryText()) ?? "[NomeDaTabela]";
+                string script    = SelectScriptBuilder.Build(data, tableName);
+
+                CopyToClipboard(script, "Script as SELECT");
+                ShowStatus($"SELECT copiado ({modeMsg}, tabela: {tableName})");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Script as SELECT", ex);
+                ShowStatus("falha em Script as SELECT — veja Output > SQL Beaver");
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────
+        // Script as UPDATE
+        // ──────────────────────────────────────────────────────────────────
+
+        private static void OnScriptAsUpdate(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                object grid = ResultsGridAccess.GetFocusedGridControl();
+                if (grid == null) { ShowStatus("nenhuma grid em foco"); return; }
+
+                GridData data = ReadGridDataWithSelection(grid, out string modeMsg);
+                if (data == null || data.Rows.Count == 0) { ShowStatus("grid vazia"); return; }
+
+                string tableName = TableNameHeuristic.TryExtract(GetActiveQueryText()) ?? "[NomeDaTabela]";
+                IReadOnlyList<string> pkCols = ResolvePkColumns(tableName);
+                string script = UpdateScriptBuilder.Build(data, tableName, pkCols);
+
+                CopyToClipboard(script, "Script as UPDATE");
+                ShowStatus($"{data.Rows.Count} linha(s) UPDATE copiada(s) ({modeMsg}, tabela: {tableName})");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Script as UPDATE", ex);
+                ShowStatus("falha em Script as UPDATE — veja Output > SQL Beaver");
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────
+        // Script as DELETE
+        // ──────────────────────────────────────────────────────────────────
+
+        private static void OnScriptAsDelete(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                object grid = ResultsGridAccess.GetFocusedGridControl();
+                if (grid == null) { ShowStatus("nenhuma grid em foco"); return; }
+
+                GridData data = ReadGridDataWithSelection(grid, out string modeMsg);
+                if (data == null || data.Rows.Count == 0) { ShowStatus("grid vazia"); return; }
+
+                string tableName = TableNameHeuristic.TryExtract(GetActiveQueryText()) ?? "[NomeDaTabela]";
+                IReadOnlyList<string> pkCols = ResolvePkColumns(tableName);
+                string script = DeleteScriptBuilder.Build(data, tableName, pkCols);
+
+                CopyToClipboard(script, "Script as DELETE");
+                ShowStatus($"{data.Rows.Count} linha(s) DELETE copiada(s) ({modeMsg}, tabela: {tableName})");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Script as DELETE", ex);
+                ShowStatus("falha em Script as DELETE — veja Output > SQL Beaver");
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────
+        // Script as MERGE
+        // ──────────────────────────────────────────────────────────────────
+
+        private static void OnScriptAsMerge(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                object grid = ResultsGridAccess.GetFocusedGridControl();
+                if (grid == null) { ShowStatus("nenhuma grid em foco"); return; }
+
+                GridData data = ReadGridDataWithSelection(grid, out string modeMsg);
+                if (data == null || data.Rows.Count == 0) { ShowStatus("grid vazia"); return; }
+
+                string tableName = TableNameHeuristic.TryExtract(GetActiveQueryText()) ?? "[NomeDaTabela]";
+                IReadOnlyList<string> pkCols = ResolvePkColumns(tableName);
+                string script = MergeScriptBuilder.Build(data, tableName, pkCols);
+
+                CopyToClipboard(script, "Script as MERGE");
+                ShowStatus($"{data.Rows.Count} linha(s) MERGE copiada(s) ({modeMsg}, tabela: {tableName})");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Script as MERGE", ex);
+                ShowStatus("falha em Script as MERGE — veja Output > SQL Beaver");
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────
+        // Helpers
+        // ──────────────────────────────────────────────────────────────────
+
+        /// <summary>Lê toda a grid (sem seleção) e retorna modeMsg.</summary>
+        private static GridData ReadGridData(object grid, out string modeMsg)
+        {
+            GridData data = ResultsGridAccess.ReadAll(grid, out bool truncated);
+            int rowCount  = data?.Rows.Count ?? 0;
+            modeMsg = $"grid inteira ({rowCount} linha(s))";
+            if (truncated)
+                modeMsg += $" — truncada em {ResultsGridAccess.MaxRows}";
+            return data;
+        }
+
+        /// <summary>Lê seleção se existir, senão toda a grid.</summary>
+        private static GridData ReadGridDataWithSelection(object grid, out string modeMsg)
+        {
+            ResultsGridAccess.GridSelection sel = ResultsGridAccess.ReadSelection(grid);
+            if (ResultsGridAccess.IsRealSelection(sel))
+            {
+                modeMsg = $"{sel.RowIndexes.Count} linha(s) selecionada(s)";
+                return ResultsGridAccess.ReadRows(grid, sel.RowIndexes);
+            }
+            return ReadGridData(grid, out modeMsg);
+        }
+
+        /// <summary>
+        /// Tenta resolver as colunas PK da tabela via cache de metadata.
+        /// Retorna lista vazia quando não resolvido.
+        /// </summary>
+        private static IReadOnlyList<string> ResolvePkColumns(string tableRef)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                ActiveConnection conn = ConnectionService.GetActiveConnection();
+                if (conn == null) return new string[0];
+
+                DbMetadata metadata = SqlBeaverCompletionSourceProvider.Cache.TryGet(
+                    conn.Server, conn.Database,
+                    new MetadataRequest
+                    {
+                        ConnectionString     = conn.ConnectionString,
+                        AccessToken          = conn.AccessToken,
+                        ProviderConnectionType = conn.ProviderConnectionType
+                    });
+
+                if (metadata == null) return new string[0];
+
+                // Strip brackets from tableRef for lookup
+                string stripped = tableRef.Trim('[', ']');
+                string schema = null;
+                string tname  = stripped;
+                int dot = stripped.LastIndexOf('.');
+                if (dot >= 0)
+                {
+                    schema = stripped.Substring(0, dot).Trim('[', ']');
+                    tname  = stripped.Substring(dot + 1).Trim('[', ']');
+                }
+
+                if (schema == null)
+                    schema = metadata.ResolveUniqueSchema(tname);
+
+                if (schema == null) return new string[0];
+
+                string key = DbMetadata.TableKey(schema, tname);
+                if (!metadata.ColumnsByTable.TryGetValue(key, out IReadOnlyList<ColumnEntry> cols))
+                    return new string[0];
+
+                var pkList = new List<string>();
+                foreach (ColumnEntry col in cols)
+                {
+                    if (col.IsPrimaryKey)
+                        pkList.Add(col.Name);
+                }
+                return pkList;
+            }
+            catch
+            {
+                return new string[0];
+            }
+        }
+
+        private static void CopyToClipboard(string text, string opName)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+            }
+            catch (Exception clipEx)
+            {
+                Log.Error(opName + ": clipboard inacessível", clipEx);
+                ShowStatus("não foi possível acessar o clipboard (em uso por outro app)");
             }
         }
 

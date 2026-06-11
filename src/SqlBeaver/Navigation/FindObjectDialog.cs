@@ -8,6 +8,7 @@ using SqlBeaver.Connection;
 using SqlBeaver.Completion;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Metadata;
+using SqlBeaver.Scripting;
 
 namespace SqlBeaver.Navigation
 {
@@ -38,6 +39,7 @@ namespace SqlBeaver.Navigation
         private readonly TextBox _searchBox;
         private readonly ComboBox _typeFilter;
         private readonly ListView _listView;
+        private readonly Button _crudButton;
 
         // ---------------------------------------------------------------
         // Data
@@ -106,13 +108,40 @@ namespace SqlBeaver.Navigation
             _listView.KeyDown += OnListKeyDown;
             _listView.DoubleClick += OnListDoubleClick;
 
+            // Context menu for list view
+            var ctxMenu = new ContextMenuStrip();
+            var ctxGoTo = new ToolStripMenuItem("Ir para definição");
+            ctxGoTo.Click += (s, e) => AcceptSelected();
+            var ctxCrud = new ToolStripMenuItem("Gerar CRUD");
+            ctxCrud.Click += (s, e) => GenerateCrudForSelected();
+            ctxMenu.Items.Add(ctxGoTo);
+            ctxMenu.Items.Add(ctxCrud);
+            ctxMenu.Opening += (s, e) =>
+            {
+                var sel = _listView.SelectedItems.Count > 0
+                    ? _listView.SelectedItems[0].Tag as FindItem
+                    : null;
+                ctxCrud.Enabled = sel != null && sel.IsTable;
+            };
+            _listView.ContextMenuStrip = ctxMenu;
+
+            // "Gerar CRUD" button in the bottom panel
+            _crudButton = new Button
+            {
+                Text = "Gerar CRUD",
+                Dock = DockStyle.Bottom,
+                Height = 28,
+                Font = new System.Drawing.Font("Segoe UI", 9)
+            };
+            _crudButton.Click += (s, e) => GenerateCrudForSelected();
+
             // Layout
-            var panel = new Panel { Dock = DockStyle.Top, Height = 60 };
             _typeFilter.Height = 25;
             _typeFilter.Width = Width - 20;
             _searchBox.Height = 25;
             _searchBox.Width = Width - 20;
             Controls.Add(_listView);
+            Controls.Add(_crudButton);
             Controls.Add(_typeFilter);
             Controls.Add(_searchBox);
 
@@ -215,6 +244,31 @@ namespace SqlBeaver.Navigation
             };
             DialogResult = DialogResult.OK;
             Close();
+        }
+
+        private void GenerateCrudForSelected()
+        {
+            if (_listView.SelectedItems.Count == 0) return;
+            var item = _listView.SelectedItems[0].Tag as FindItem;
+            if (item == null || !item.IsTable)
+            {
+                ShowStatus("Gerar CRUD: selecione uma tabela.");
+                return;
+            }
+
+            string key = DbMetadata.TableKey(item.Schema, item.Name);
+            if (!_metadata.ColumnsByTable.TryGetValue(key, out IReadOnlyList<ColumnEntry> columns))
+            {
+                ShowStatus("Gerar CRUD: colunas não encontradas no cache.");
+                return;
+            }
+
+            string script = CrudScriptBuilder.Build(item.Schema, item.Name, columns);
+            Close();
+
+            // Must switch to UI thread to open a query window (already on UI thread here)
+            DefinitionService.OpenNewQueryWindow(script);
+            Log.Info("Gerar CRUD: " + item.Schema + "." + item.Name);
         }
 
         private void OnListDoubleClick(object sender, EventArgs e) => AcceptSelected();

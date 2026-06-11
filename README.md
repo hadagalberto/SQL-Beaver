@@ -110,6 +110,11 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 ### Grid de resultados
 
 - **Script as INSERT** — gera INSERTs para as linhas selecionadas.
+- **Script as SELECT** — gera SELECT com todas as colunas da grid.
+- **Script as UPDATE** — gera UPDATEs por linha (SET colunas não-PK, WHERE por PK).
+- **Script as DELETE** — gera DELETEs por linha (WHERE por PK).
+- **Script as MERGE** — gera um único MERGE com VALUES da grid como fonte.
+- **Gerar CRUD** — disponível em *Localizar objeto* para tabelas: abre janela com SELECT/INSERT/UPDATE/DELETE parametrizados.
 - **Copy as IN clause** — copia os valores da coluna selecionada como lista `IN (...)`.
 - **Open in Excel** — exporta para `.xlsx` (OpenXML) e abre no app associado;
   respeita a seleção de linhas.
