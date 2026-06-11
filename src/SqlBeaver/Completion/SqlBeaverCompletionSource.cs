@@ -15,6 +15,7 @@ using SqlBeaver.Analysis;
 using SqlBeaver.Connection;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Metadata;
+using SqlBeaver.Scripting;
 
 namespace SqlBeaver.Completion
 {
@@ -153,18 +154,18 @@ namespace SqlBeaver.Completion
                 foreach (TableEntry table in metadata.Tables)
                 {
                     if (string.Equals(table.Schema, context.SchemaPrefix, StringComparison.OrdinalIgnoreCase))
-                        items.Add(new CompletionItem(BracketIfNeeded(table.Name), this, TableIcon));
+                        items.Add(new CompletionItem(SqlIdentifier.Bracket(table.Name), this, TableIcon));
                 }
                 return items.ToImmutable();
             }
 
             // AfterFromJoin e FreeIdentifier: schemas + tabelas qualificadas
             foreach (string schema in metadata.Schemas)
-                items.Add(new CompletionItem(BracketIfNeeded(schema), this, SchemaIcon));
+                items.Add(new CompletionItem(SqlIdentifier.Bracket(schema), this, SchemaIcon));
 
             foreach (TableEntry table in metadata.Tables)
             {
-                string qualified = BracketIfNeeded(table.Schema) + "." + BracketIfNeeded(table.Name);
+                string qualified = SqlIdentifier.Bracket(table.Schema) + "." + SqlIdentifier.Bracket(table.Name);
                 items.Add(new CompletionItem(
                     displayText: table.Name,   // nome simples: é o que o usuário digita
                     source: this,
@@ -178,16 +179,6 @@ namespace SqlBeaver.Completion
             }
 
             return items.ToImmutable();
-        }
-
-        private static string BracketIfNeeded(string identifier)
-        {
-            foreach (char c in identifier)
-            {
-                if (!char.IsLetterOrDigit(c) && c != '_')
-                    return "[" + identifier.Replace("]", "]]") + "]";
-            }
-            return identifier;
         }
 
         private static SqlContext AnalyzeAt(SnapshotPoint point)
