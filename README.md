@@ -126,6 +126,14 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 - **Rename alias / @variável** — diálogo de novo nome; substituição
   token-aware no escopo do statement (alias) ou do batch entre GOs (variável).
 
+### QuickInfo (hover)
+
+- Passe o mouse sobre uma tabela, alias, coluna ou procedure para ver a definição (do cache, sem
+  consultar o banco): alias mostra a tabela original e até 20 colunas; coluna mostra tipo e
+  NULL/NOT NULL [PK]; procedure mostra a assinatura com parâmetros (`@p tipo [OUTPUT]`).
+  Funciona também com tabelas temporárias (`#temp`), variáveis de tabela (`@t`) e CTEs.
+  Nunca quebra o hover — exceções são capturadas em silêncio.
+
 ### Conforto no editor
 
 - Realça todas as ocorrências do identificador sob o cursor (word-boundary, case-insensitive,
