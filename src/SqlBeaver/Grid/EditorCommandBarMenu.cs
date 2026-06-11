@@ -29,6 +29,8 @@ namespace SqlBeaver.Grid
         private static CommandBarButton _recoverSessionButton;
         private static CommandBarButton _environmentsButton;
 
+        private static CommandBarButton _insertColumnsButton;
+
         // Refactor submenu
         private static CommandBarPopup _refactorPopup;
         private static CommandBarButton _expandWildcardButton;
@@ -59,6 +61,7 @@ namespace SqlBeaver.Grid
                 _queryHistoryButton   = AddButton(editorBar, "SQL Beaver: Histórico de consultas", OnQueryHistory,   beginGroup: true);
                 _recoverSessionButton = AddButton(editorBar, "SQL Beaver: Recuperar consultas…",   OnRecoverSession, beginGroup: false);
                 _environmentsButton   = AddButton(editorBar, "SQL Beaver: Ambientes (cores)…",     OnEnvironments,   beginGroup: false);
+                _insertColumnsButton  = AddButton(editorBar, "SQL Beaver: Inserir colunas…",        OnInsertColumns,  beginGroup: true);
 
                 // Refactor submenu
                 _refactorPopup = (CommandBarPopup)editorBar.Controls.Add(
@@ -242,6 +245,20 @@ namespace SqlBeaver.Grid
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             Commands.EditorCommands.Environments();
+        }
+
+        private static void OnInsertColumns(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Commands.EditorCommands.InsertColumns();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Inserir colunas", ex);
+                ShowStatus("falha em Inserir colunas — veja Output > SQL Beaver");
+            }
         }
     }
 }

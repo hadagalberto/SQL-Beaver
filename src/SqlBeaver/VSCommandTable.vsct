@@ -60,6 +60,10 @@
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Executar statement atual</ButtonText></Strings>
       </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidInsertColumns" priority="0x0108" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>Inserir colunas…</ButtonText></Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -88,6 +92,9 @@
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidRunCurrentStatement" priority="0x0107">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidInsertColumns" priority="0x0108">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
   </CommandPlacements>
 
   <KeyBindings>
@@ -113,6 +120,7 @@
       <IDSymbol name="cmdidRecoverSession" value="0x0105" />
       <IDSymbol name="cmdidEnvironments"         value="0x0106" />
       <IDSymbol name="cmdidRunCurrentStatement"  value="0x0107" />
+      <IDSymbol name="cmdidInsertColumns"        value="0x0108" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>

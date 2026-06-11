@@ -28,6 +28,14 @@ própria janela de query.
 - **Escopo local** — colunas de tabelas temporárias (`#temp`), variáveis de tabela
   (`@t`) e CTEs; funções built-in (`GETDATE`, `ISNULL`, `ROW_NUMBER`...) e views
   de sistema (`sys.objects`, `sys.tables`, `sys.dm_exec_requests`...).
+- **INSERT completo** — ao digitar `INSERT INTO` e aceitar uma tabela, um segundo item
+  `Tabela — INSERT completo` gera a lista de colunas e o bloco `VALUES` com hint de nome
+  em cada posição.
+- **Preenchimento de GROUP BY** — após `GROUP BY`, o primeiro item da lista insere
+  automaticamente todas as colunas não-agregadas do SELECT do mesmo statement.
+- **JOIN por nome de coluna** — em bancos sem FK declarada, sugere JOINs com base em
+  nomes de coluna coincidentes (sufixo `Id`/`ID` ou coluna PK), complementando as
+  sugestões de FK existentes.
 - As sugestões também incluem os snippets cadastrados (ver abaixo).
 - Silencioso dentro de strings e comentários.
 - Cache de metadata por servidor+database (TTL 10 min); nunca bloqueia a
@@ -126,6 +134,9 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 
 ### Interface
 
+- **Inserir colunas…** — abre um diálogo com as tabelas do escopo e checkboxes por coluna
+  (filtro por substring no topo); OK insere a lista qualificada no caret com um único undo.
+  Disponível via clique direito no editor e em **Tools > SQL Beaver**.
 - Menu **Tools > SQL Beaver** e toolbar **SQL Beaver** com os principais comandos.
 - Atalhos padrão reconfiguráveis em **Tools > Options > Keyboard**:
   `Ctrl+K, Ctrl+Y` (Format), `Ctrl+K, Ctrl+O` (Localizar objeto),

@@ -88,6 +88,10 @@ namespace SqlBeaver.Completion
         // Tabelas locais do batch atual; populado em GetCompletionContextAsync antes de BuildItems.
         private IReadOnlyList<LocalTableDef> _pendingLocals;
 
+        // Texto completo da janela e posição do caret nela — usados por BuildGroupByFillItem.
+        private string _pendingFullText;
+        private int    _pendingCaretInWindow;
+
         // Diagnóstico: contador global de instâncias. Se aparecer #1 E #2 nos logs,
         // há mais de uma extensão SQL Beaver carregada (instalação duplicada) — duas
         // fontes de completion competindo quebram o span de filtragem.
@@ -166,6 +170,16 @@ namespace SqlBeaver.Completion
                 // Scan local objects (O(64 KB)) para #temp, @tabela, CTEs.
                 _pendingLocals = ScanLocals(triggerLocation);
 
+                // Captura o texto completo da janela e posição do caret para GroupBy fill.
+                {
+                    ITextSnapshot snap = triggerLocation.Snapshot;
+                    int caretPos = triggerLocation.Position;
+                    int wStart = Math.Max(0, caretPos - MaxAnalysisWindow);
+                    int wEnd   = Math.Min(snap.Length, caretPos + MaxAnalysisWindow);
+                    _pendingFullText      = snap.GetText(wStart, wEnd - wStart);
+                    _pendingCaretInWindow = caretPos - wStart;
+                }
+
                 ImmutableArray<CompletionItem> items = BuildItems(context, metadata, scope, connection);
 
                 if (!_loggedFirstItems)
@@ -210,13 +224,26 @@ namespace SqlBeaver.Completion
                     break;
 
                 case SqlContextKind.AfterJoin:
-                    BuildFkJoinItems(items, metadata, scope, connection, context.Partial);
+                {
+                    var fkItems = BuildFkJoinItemsList(metadata, scope, connection, context.Partial);
+                    foreach (var item in fkItems) items.Add(item);
+                    BuildNameMatchJoinItems(items, metadata, scope, fkItems);
                     BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: true, locals);
                     break;
+                }
 
                 case SqlContextKind.AfterFromJoin:
+                {
                     bool alias = string.Equals(context.TriggerKeyword, "FROM", StringComparison.OrdinalIgnoreCase);
+                    bool isInto = string.Equals(context.TriggerKeyword, "INTO", StringComparison.OrdinalIgnoreCase);
                     BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: alias, locals);
+                    if (isInto)
+                        BuildInsertFillItems(items, metadata);
+                    break;
+                }
+
+                case SqlContextKind.AfterGroupBy:
+                    BuildGroupByFillItem(items, metadata, scope, context);
                     break;
 
                 case SqlContextKind.AfterExec:
@@ -420,14 +447,12 @@ namespace SqlBeaver.Completion
                 attributeIcons: ImmutableArray<ImageElement>.Empty);
         }
 
-        private void BuildFkJoinItems(
-            ImmutableArray<CompletionItem>.Builder items,
+        /// <summary>Builds FK join items and returns them (for dedup with name-match suggestions).</summary>
+        private List<CompletionItem> BuildFkJoinItemsList(
             DbMetadata metadata, IReadOnlyList<TableRef> scope,
             ActiveConnection connection, string partial = null)
         {
-            // O parcial digitado depois do JOIN entra no escopo como TableRef sem alias;
-            // sem a poda, a própria sugestão FK que o usuário está digitando é descartada
-            // como "já em escopo".
+            // Pruning: typed partial may appear as a phantom TableRef in scope.
             if (!string.IsNullOrEmpty(partial))
             {
                 var pruned = new List<TableRef>(scope.Count);
@@ -441,29 +466,130 @@ namespace SqlBeaver.Completion
                 scope = pruned;
             }
 
-            // Ranking por uso: pares de join mais executados primeiro. OrderByDescending
-            // é estável — empates (count 0) preservam a ordem do builder (mesmo schema antes).
-            string server = connection?.Server;
+            string server   = connection?.Server;
             string database = connection?.Database;
             List<FkJoinSuggestion> suggestions = FkJoinSuggestionBuilder.Build(scope, metadata)
                 .OrderByDescending(s => Usage.UsageStore.GetJoinCount(server, database, s.PairKey))
                 .ToList();
 
+            var result = new List<CompletionItem>(suggestions.Count);
             int index = 0;
             foreach (FkJoinSuggestion suggestion in suggestions)
             {
-                items.Add(new CompletionItem(
+                result.Add(new CompletionItem(
                     displayText: suggestion.DisplayText,
                     source: this,
                     icon: JoinIcon,
                     filters: ImmutableArray<CompletionFilter>.Empty,
                     suffix: "FK",
                     insertText: suggestion.InsertText,
-                    sortText: "0_" + index.ToString("D3"), // topo da lista; preserva ordem pós-ranking
+                    sortText: "0_" + index.ToString("D3"),
                     filterText: suggestion.FilterText,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
                 index++;
             }
+            return result;
+        }
+
+        /// <summary>Adds name-match JOIN items after FK items (sortText "0_z{i:D3}").</summary>
+        private void BuildNameMatchJoinItems(
+            ImmutableArray<CompletionItem>.Builder items,
+            DbMetadata metadata, IReadOnlyList<TableRef> scope,
+            List<CompletionItem> fkItems)
+        {
+            // Collect FK pair keys already suggested (for dedup).
+            var fkPairKeys = new List<string>(fkItems.Count);
+            // We don't have direct access to FkJoinSuggestion pairkeys here — pass empty;
+            // NameMatchJoinSuggester deduplicates on table pairs regardless.
+            IReadOnlyList<Scripting.NameJoinSuggestion> nameSuggestions =
+                Scripting.NameMatchJoinSuggester.Suggest(scope, metadata, fkPairKeys);
+
+            int index = 0;
+            foreach (Scripting.NameJoinSuggestion s in nameSuggestions)
+            {
+                items.Add(new CompletionItem(
+                    displayText: s.DisplayText,
+                    source: this,
+                    icon: JoinIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: "nome",
+                    insertText: s.InsertText,
+                    sortText: "0_z" + index.ToString("D3"),
+                    filterText: s.FilterText,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
+                index++;
+            }
+        }
+
+        /// <summary>
+        /// For AfterFromJoin with INTO: adds an "INSERT completo" item per table
+        /// (sortText immediately after the normal table item, using "1_" prefix).
+        /// Strategy (b): plain text with comment-hint placeholders, no snippet session.
+        /// </summary>
+        private void BuildInsertFillItems(
+            ImmutableArray<CompletionItem>.Builder items,
+            DbMetadata metadata)
+        {
+            foreach (TableEntry table in metadata.Tables)
+            {
+                string tableKey = DbMetadata.TableKey(table.Schema, table.Name);
+                if (!metadata.ColumnsByTable.TryGetValue(tableKey, out IReadOnlyList<ColumnEntry> columns))
+                    continue;
+                if (columns.Count == 0) continue;
+
+                string tableDisplay =
+                    Scripting.SqlIdentifier.Bracket(table.Schema) + "." +
+                    Scripting.SqlIdentifier.Bracket(table.Name);
+
+                string insertText = Scripting.InsertFillBuilder.Build(tableDisplay, columns);
+
+                items.Add(new CompletionItem(
+                    displayText: table.Name + " — INSERT completo",
+                    source: this,
+                    icon: TableIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: table.Schema,
+                    insertText: insertText,
+                    sortText: "1_" + table.Name, // after normal table items (Usage.UsageRanker prefix)
+                    filterText: table.Name,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
+            }
+        }
+
+        /// <summary>
+        /// For AfterGroupBy: adds a single "(colunas não agregadas do SELECT)" item
+        /// when GroupByFillAnalyzer returns ≥1 column.
+        /// </summary>
+        private void BuildGroupByFillItem(
+            ImmutableArray<CompletionItem>.Builder items,
+            DbMetadata metadata,
+            IReadOnlyList<TableRef> scope,
+            SqlContext context)
+        {
+            // We need the full text around the caret. We can't get it here without the snapshot;
+            // instead we store it in context.TriggerKeyword side-channel or use a field.
+            // Since BuildItems is called from GetCompletionContextAsync which has the snapshot,
+            // we pass the full window text via a field set before BuildItems.
+            string fullText = _pendingFullText;
+            int caretInWindow = _pendingCaretInWindow;
+            if (fullText == null) return;
+
+            IReadOnlyList<string> cols =
+                Analysis.GroupByFillAnalyzer.NonAggregatedSelectColumns(fullText, caretInWindow);
+            if (cols == null || cols.Count == 0) return;
+
+            string insertText = string.Join(", ", cols);
+
+            items.Add(new CompletionItem(
+                displayText: "(colunas não agregadas do SELECT)",
+                source: this,
+                icon: ColumnIcon,
+                filters: ImmutableArray<CompletionFilter>.Empty,
+                suffix: insertText.Length > 60 ? insertText.Substring(0, 57) + "…" : insertText,
+                insertText: insertText,
+                sortText: "0_group_by_fill",
+                filterText: string.Empty,
+                attributeIcons: ImmutableArray<ImageElement>.Empty));
         }
 
         private void BuildKeywordItems(ImmutableArray<CompletionItem>.Builder items)

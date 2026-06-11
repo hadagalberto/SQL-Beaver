@@ -25,6 +25,9 @@ namespace SqlBeaver.Analysis
 
         /// <summary>Após USE: bancos do servidor.</summary>
         AfterUse,
+
+        /// <summary>Após GROUP BY: preenchimento automático de colunas não-agregadas.</summary>
+        AfterGroupBy,
     }
 
     public sealed class SqlContext

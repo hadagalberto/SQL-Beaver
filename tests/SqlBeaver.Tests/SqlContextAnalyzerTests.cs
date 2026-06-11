@@ -279,7 +279,6 @@ namespace SqlBeaver.Tests
         [InlineData("WHERE ")]
         [InlineData("WHERE Nome")]
         [InlineData("ORDER BY ")]
-        [InlineData("GROUP BY Da")]
         [InlineData("HAVING ")]
         [InlineData("UPDATE T SET ")]
         [InlineData("ON p")]
@@ -289,6 +288,22 @@ namespace SqlBeaver.Tests
         public void ColumnTriggers_ReturnColumnContext(string text)
         {
             Assert.Equal(SqlContextKind.ColumnContext, Analyze(text).Kind);
+        }
+
+        // GROUP BY → AfterGroupBy (mudança intencional v5 C3)
+        [Theory]
+        [InlineData("SELECT a, COUNT(*) FROM t GROUP BY ")]
+        [InlineData("GROUP BY Da")]
+        public void GroupByTrigger_ReturnsAfterGroupBy(string text)
+        {
+            Assert.Equal(SqlContextKind.AfterGroupBy, Analyze(text).Kind);
+        }
+
+        // ORDER BY → ColumnContext (não é GROUP BY)
+        [Fact]
+        public void OrderByTrigger_ReturnsColumnContext()
+        {
+            Assert.Equal(SqlContextKind.ColumnContext, Analyze("ORDER BY ").Kind);
         }
 
         [Fact]

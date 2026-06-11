@@ -97,6 +97,21 @@ namespace SqlBeaver.Analysis
             // A partir daqui, bloquear @var / #tmp (contexto de expressão/coluna)
             if (partialIsLocalName) return SqlContext.None;
 
+            // GROUP BY → AfterGroupBy (specialização antes do check genérico de BY)
+            if (hasWhitespaceGap && string.Equals(previousWord, "BY", StringComparison.OrdinalIgnoreCase))
+            {
+                // Verificar se a palavra antes de BY é GROUP
+                int j = i; // i aponta para o char antes de "BY" (o whitespace/identchar antes)
+                while (j >= start && char.IsWhiteSpace(text[j])) j--;
+                int wordBeforeByEnd = j + 1;
+                while (j >= start && IsIdentifierChar(text[j])) j--;
+                string wordBeforeBy = text.Substring(j + 1, wordBeforeByEnd - (j + 1));
+                if (string.Equals(wordBeforeBy, "GROUP", StringComparison.OrdinalIgnoreCase))
+                    return new SqlContext(SqlContextKind.AfterGroupBy, null, partial, partialStart, "GROUP BY");
+                // ORDER BY, etc. → ColumnContext normal
+                return new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart);
+            }
+
             if (hasWhitespaceGap && IsAny(previousWord, ColumnKeywords))
                 return new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart);
 

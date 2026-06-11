@@ -16,5 +16,6 @@ namespace SqlBeaver.Commands
         public const int RecoverSession   = 0x0105;
         public const int Environments        = 0x0106;
         public const int RunCurrentStatement = 0x0107;
+        public const int InsertColumns       = 0x0108;
     }
 }

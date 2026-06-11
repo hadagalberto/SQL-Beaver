@@ -187,6 +187,70 @@ namespace SqlBeaver.Commands
             }
         }
 
+        public static void InsertColumns()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus("Inserir colunas: nenhum documento ativo."); return; }
+
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                TextSelection sel = doc.Selection;
+                string textUpToCaret = doc.StartPoint.CreateEditPoint().GetText(sel.ActivePoint);
+                int caretOffset = textUpToCaret.Length;
+
+                Metadata.DbMetadata metadata = GetMetadataForCommands(dte);
+                if (metadata == null) { ShowStatus("Inserir colunas: cache ainda carregando — tente novamente."); return; }
+
+                System.Collections.Generic.IReadOnlyList<Analysis.TableRef> scope =
+                    Analysis.StatementScopeAnalyzer.GetTablesInScope(text, caretOffset);
+                if (scope == null || scope.Count == 0)
+                { ShowStatus("Inserir colunas: nenhuma tabela no escopo do statement."); return; }
+
+                string resultText;
+                IntPtr hwnd;
+                try { hwnd = new IntPtr((int)dte.MainWindow.HWnd); }
+                catch { hwnd = IntPtr.Zero; }
+                var owner = new System.Windows.Forms.NativeWindow();
+                owner.AssignHandle(hwnd);
+                try
+                {
+                    using (var dlg = new Completion.InsertColumnsDialog(scope, metadata))
+                    {
+                        var ownerWin = new NativeWindowWrapper(hwnd);
+                        if (dlg.ShowDialog(ownerWin) != System.Windows.Forms.DialogResult.OK) return;
+                        resultText = dlg.ResultText;
+                    }
+                }
+                finally
+                {
+                    owner.ReleaseHandle();
+                }
+
+                if (string.IsNullOrEmpty(resultText)) return;
+
+                dte.UndoContext.Open("SQL Beaver Inserir colunas");
+                try
+                {
+                    doc.Selection.Insert(resultText,
+                        (int)vsInsertFlags.vsInsertFlagsContainNewText);
+                }
+                finally
+                {
+                    dte.UndoContext.Close();
+                }
+
+                ShowStatus("colunas inseridas.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Inserir colunas", ex);
+                ShowStatus("falha em Inserir colunas — veja Output > SQL Beaver");
+            }
+        }
+
         public static void RunCurrentStatement()
         {
             try
@@ -249,6 +313,32 @@ namespace SqlBeaver.Commands
                 Log.Error("Executar statement atual", ex);
                 ShowStatus("falha em Executar statement atual — veja Output > SQL Beaver");
             }
+        }
+
+        // ---------------------------------------------------------------
+        // Shared helpers
+        // ---------------------------------------------------------------
+
+        private static Metadata.DbMetadata GetMetadataForCommands(DTE2 dte)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Connection.ActiveConnection conn = Connection.ConnectionService.GetActiveConnection();
+            if (conn == null) return null;
+            return Completion.SqlBeaverCompletionSourceProvider.Cache.TryGet(
+                conn.Server, conn.Database,
+                new Metadata.MetadataRequest
+                {
+                    ConnectionString       = conn.ConnectionString,
+                    AccessToken            = conn.AccessToken,
+                    ProviderConnectionType = conn.ProviderConnectionType,
+                });
+        }
+
+        private sealed class NativeWindowWrapper : System.Windows.Forms.IWin32Window
+        {
+            private readonly IntPtr _handle;
+            public NativeWindowWrapper(IntPtr handle) { _handle = handle; }
+            public IntPtr Handle => _handle;
         }
     }
 }
