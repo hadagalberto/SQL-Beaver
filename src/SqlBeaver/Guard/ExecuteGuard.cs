@@ -75,9 +75,20 @@ namespace SqlBeaver.Guard
                     ? $"{first.Keyword} sem WHERE na linha {first.Line}.\r\n\r\nExecutar mesmo assim?"
                     : $"{dangers.Count} statements sem WHERE (primeiro: {first.Keyword} na linha {first.Line}).\r\n\r\nExecutar mesmo assim?";
 
-                DialogResult choice = MessageBox.Show(
-                    message, "SQL Beaver — atenção",
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                var owner = new NativeWindow();
+                owner.AssignHandle((System.IntPtr)(int)dte.MainWindow.HWnd);
+                DialogResult choice;
+                try
+                {
+                    choice = MessageBox.Show(
+                        owner,
+                        message, "SQL Beaver — atenção",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                }
+                finally
+                {
+                    owner.ReleaseHandle();
+                }
 
                 if (choice != DialogResult.Yes)
                 {

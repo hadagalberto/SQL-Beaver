@@ -10,7 +10,7 @@ namespace SqlBeaver.Tests
         {
             bool ok = SqlFormatterService.TryFormat(
                 "select p.nome, p.id from cadastro.pessoas p where p.id = 1 order by p.nome",
-                out string formatted, out string error);
+                out string formatted, out string error, out _);
 
             Assert.True(ok, error);
             Assert.Contains("SELECT", formatted);
@@ -22,7 +22,7 @@ namespace SqlBeaver.Tests
         [Fact]
         public void SyntaxError_ReturnsFalse_WithLineInError()
         {
-            bool ok = SqlFormatterService.TryFormat("SELECT * FROM WHERE", out _, out string error);
+            bool ok = SqlFormatterService.TryFormat("SELECT * FROM WHERE", out _, out string error, out _);
             Assert.False(ok);
             Assert.Contains("linha", error);
         }
@@ -31,7 +31,7 @@ namespace SqlBeaver.Tests
         public void PreservesStringLiterals()
         {
             Assert.True(SqlFormatterService.TryFormat(
-                "select 'TeXto PreServado' as x", out string formatted, out _));
+                "select 'TeXto PreServado' as x", out string formatted, out _, out _));
             Assert.Contains("'TeXto PreServado'", formatted);
         }
 
@@ -39,10 +39,22 @@ namespace SqlBeaver.Tests
         public void MultipleStatements_AllFormatted()
         {
             Assert.True(SqlFormatterService.TryFormat(
-                "select 1; select 2;", out string formatted, out _));
+                "select 1; select 2;", out string formatted, out _, out _));
             int count = 0, idx = 0;
             while ((idx = formatted.IndexOf("SELECT", idx, System.StringComparison.Ordinal)) >= 0) { count++; idx++; }
             Assert.Equal(2, count);
+        }
+
+        [Fact]
+        public void DetectsComments_SoCallerCanWarnBeforeDroppingThem()
+        {
+            Assert.True(SqlFormatterService.TryFormat(
+                "-- cabeçalho\r\nselect 1 /* inline */", out _, out _, out bool hasComments));
+            Assert.True(hasComments);
+
+            Assert.True(SqlFormatterService.TryFormat(
+                "select 1", out _, out _, out hasComments));
+            Assert.False(hasComments);
         }
     }
 }

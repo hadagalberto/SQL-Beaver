@@ -6,10 +6,11 @@ namespace SqlBeaver.Formatting
     /// no texto. Tipos do ScriptDom apenas em corpos de método (restrição MEF do SSMS).</summary>
     public static class SqlFormatterService
     {
-        public static bool TryFormat(string sql, out string formatted, out string error)
+        public static bool TryFormat(string sql, out string formatted, out string error, out bool containsComments)
         {
             formatted = null;
             error = null;
+            containsComments = false;
             try
             {
                 var parser = new Microsoft.SqlServer.TransactSql.ScriptDom.TSql160Parser(true);
@@ -24,6 +25,19 @@ namespace SqlBeaver.Formatting
                 {
                     error = $"erro de sintaxe na linha {errors[0].Line}: {errors[0].Message}";
                     return false;
+                }
+
+                if (fragment.ScriptTokenStream != null)
+                {
+                    foreach (Microsoft.SqlServer.TransactSql.ScriptDom.TSqlParserToken token in fragment.ScriptTokenStream)
+                    {
+                        if (token.TokenType == Microsoft.SqlServer.TransactSql.ScriptDom.TSqlTokenType.SingleLineComment ||
+                            token.TokenType == Microsoft.SqlServer.TransactSql.ScriptDom.TSqlTokenType.MultilineComment)
+                        {
+                            containsComments = true;
+                            break;
+                        }
+                    }
                 }
 
                 var options = new Microsoft.SqlServer.TransactSql.ScriptDom.SqlScriptGeneratorOptions

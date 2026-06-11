@@ -68,5 +68,14 @@ namespace SqlBeaver.Tests
             Assert.Empty(DangerousStatementDetector.Find(""));
             Assert.Empty(DangerousStatementDetector.Find(null));
         }
+
+        [Theory]
+        [InlineData("UPDATE STATISTICS dbo.Pessoas")]
+        [InlineData("CREATE TRIGGER t ON dbo.X AFTER DELETE AS BEGIN SELECT 1 END")]
+        [InlineData("CREATE TRIGGER t ON dbo.X FOR UPDATE AS BEGIN SELECT 1 END")]
+        public void NonDmlForms_AreNotFlagged(string sql)
+        {
+            Assert.Empty(DangerousStatementDetector.Find(sql));
+        }
     }
 }

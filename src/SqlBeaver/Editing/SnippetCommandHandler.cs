@@ -38,28 +38,33 @@ namespace SqlBeaver.Editing
 
         public void ExecuteCommand(TabKeyCommandArgs args, Action nextCommandHandler, CommandExecutionContext executionContext)
         {
+            bool nextCalled = false;
+            bool editApplied = false;
             try
             {
-                // sessão de completion aberta: Tab confirma o item — não interferir
                 if (_completionBroker.GetSession(args.TextView) != null)
                 {
+                    nextCalled = true;
                     nextCommandHandler();
                     return;
                 }
 
-                if (TryExpandSnippet(args.TextView))
-                    return; // Tab consumido pela expansão
+                if (TryExpandSnippet(args.TextView, ref editApplied))
+                    return;
 
+                nextCalled = true;
                 nextCommandHandler();
             }
             catch (Exception ex)
             {
                 Log.Error("SnippetCommandHandler", ex);
-                nextCommandHandler();
+                // nunca duplicar o Tab: só repassa se ainda não repassou E a expansão não aplicou
+                if (!nextCalled && !editApplied)
+                    nextCommandHandler();
             }
         }
 
-        private static bool TryExpandSnippet(ITextView textView)
+        private static bool TryExpandSnippet(ITextView textView, ref bool editApplied)
         {
             SnapshotPoint caret = textView.Caret.Position.BufferPosition;
             int windowStart = Math.Max(0, caret.Position - MaxAnalysisWindow);
@@ -69,15 +74,15 @@ namespace SqlBeaver.Editing
                 return false;
 
             int replaceStart = windowStart + expansion.WordStart;
+            ITextSnapshot afterEdit;
             using (ITextEdit edit = textView.TextBuffer.CreateEdit())
             {
                 edit.Replace(replaceStart, expansion.WordLength, expansion.ReplacementText);
-                edit.Apply();
+                afterEdit = edit.Apply();
             }
+            editApplied = true;
 
-            var caretPoint = new SnapshotPoint(
-                textView.TextBuffer.CurrentSnapshot, replaceStart + expansion.CaretOffset);
-            textView.Caret.MoveTo(caretPoint);
+            textView.Caret.MoveTo(new SnapshotPoint(afterEdit, replaceStart + expansion.CaretOffset));
             return true;
         }
     }

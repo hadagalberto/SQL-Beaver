@@ -43,6 +43,8 @@ namespace SqlBeaver.Analysis
                 hasTopLevelWhere = false;
             }
 
+            string lastWord = null; // última palavra de nível 0 vista antes da atual
+
             int i = 0;
             while (i < sql.Length)
             {
@@ -71,6 +73,7 @@ namespace SqlBeaver.Analysis
                 if (c == ';' && parenDepth == 0)
                 {
                     EndStatement();
+                    lastWord = null;
                     i++;
                     continue;
                 }
@@ -87,23 +90,47 @@ namespace SqlBeaver.Analysis
                         if (string.Equals(word, "GO", StringComparison.OrdinalIgnoreCase))
                         {
                             EndStatement();
+                            lastWord = null;
                         }
                         else if (string.Equals(word, "DELETE", StringComparison.OrdinalIgnoreCase) ||
                                  string.Equals(word, "UPDATE", StringComparison.OrdinalIgnoreCase))
                         {
-                            EndStatement(); // statement anterior sem ';' explícito
-                            pendingKeyword = word.ToUpperInvariant();
-                            pendingLine = line;
+                            // Ignorar DELETE/UPDATE dentro de definição de trigger (após AFTER/FOR/OF/INSTEAD)
+                            bool inTriggerContext = string.Equals(lastWord, "AFTER", StringComparison.OrdinalIgnoreCase) ||
+                                                   string.Equals(lastWord, "FOR", StringComparison.OrdinalIgnoreCase) ||
+                                                   string.Equals(lastWord, "OF", StringComparison.OrdinalIgnoreCase) ||
+                                                   string.Equals(lastWord, "INSTEAD", StringComparison.OrdinalIgnoreCase);
+                            if (!inTriggerContext)
+                            {
+                                EndStatement(); // statement anterior sem ';' explícito
+                                pendingKeyword = word.ToUpperInvariant();
+                                pendingLine = line;
+                            }
+                            lastWord = word.ToUpperInvariant();
+                        }
+                        else if (string.Equals(word, "STATISTICS", StringComparison.OrdinalIgnoreCase) &&
+                                 string.Equals(pendingKeyword, "UPDATE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // UPDATE STATISTICS não é DML — cancelar o pendente
+                            pendingKeyword = null;
+                            hasTopLevelWhere = false;
+                            lastWord = word.ToUpperInvariant();
                         }
                         else if (string.Equals(word, "WHERE", StringComparison.OrdinalIgnoreCase))
                         {
                             hasTopLevelWhere = true;
+                            lastWord = word.ToUpperInvariant();
                         }
                         else if (string.Equals(word, "SELECT", StringComparison.OrdinalIgnoreCase) ||
                                  string.Equals(word, "INSERT", StringComparison.OrdinalIgnoreCase))
                         {
                             // novo statement implícito encerra o pendente
                             EndStatement();
+                            lastWord = word.ToUpperInvariant();
+                        }
+                        else
+                        {
+                            lastWord = word.ToUpperInvariant();
                         }
                     }
                     continue;

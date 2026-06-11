@@ -83,11 +83,37 @@ namespace SqlBeaver.Grid
 
                 if (string.IsNullOrWhiteSpace(original)) { ShowStatus("Format: nada para formatar."); return; }
 
-                if (!Formatting.SqlFormatterService.TryFormat(original, out string formatted, out string error))
+                if (!Formatting.SqlFormatterService.TryFormat(original, out string formatted, out string error, out bool containsComments))
                 {
                     ShowStatus("não formatado: " + error);
                     Log.Info("Format Document abortado: " + error);
                     return;
+                }
+
+                if (containsComments)
+                {
+                    var owner = new System.Windows.Forms.NativeWindow();
+                    owner.AssignHandle((IntPtr)(int)dte.MainWindow.HWnd);
+                    System.Windows.Forms.DialogResult keep;
+                    try
+                    {
+                        keep = System.Windows.Forms.MessageBox.Show(
+                            owner,
+                            "O script contém comentários e a formatação vai REMOVÊ-LOS.\r\n\r\nFormatar mesmo assim?",
+                            "SQL Beaver — Format Document",
+                            System.Windows.Forms.MessageBoxButtons.YesNo,
+                            System.Windows.Forms.MessageBoxIcon.Warning,
+                            System.Windows.Forms.MessageBoxDefaultButton.Button2);
+                    }
+                    finally
+                    {
+                        owner.ReleaseHandle();
+                    }
+                    if (keep != System.Windows.Forms.DialogResult.Yes)
+                    {
+                        ShowStatus("formatação cancelada (comentários seriam removidos).");
+                        return;
+                    }
                 }
 
                 dte.UndoContext.Open("SQL Beaver Format Document");
