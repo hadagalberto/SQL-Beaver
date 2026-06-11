@@ -25,6 +25,21 @@ própria janela de query.
 - Suporte a Microsoft Entra MFA: clona o provider da conexão viva; o MSAL do
   processo autentica em silêncio.
 
+### Ambientes
+
+- Faixa colorida no topo do editor identifica o ambiente da conexão ativa
+  (Produção, Homologação, Desenvolvimento) com nome, servidor e banco.
+- Configurável em `%LOCALAPPDATA%\SqlBeaver\environments.json`: regras com globs de servidor/banco,
+  cor `#RRGGBB` e flag `confirmExecute`.
+- Com `confirmExecute: true`, o SQL Beaver exige confirmação antes de **qualquer** Execute
+  naquele ambiente — útil para bloquear execuções acidentais em produção.
+
+### Sintaxe ao vivo
+
+- Squiggles de erro de sintaxe (via ScriptDom) aparecem no editor enquanto você digita,
+  com debounce de ~750ms após a última alteração.
+- Documentos acima de 200KB são ignorados automaticamente.
+
 ### Auto-uppercase de keywords
 
 Palavras reservadas T-SQL (`SELECT`, `WHERE`, `JOIN`, etc.) são convertidas para
@@ -37,19 +52,53 @@ maiúsculas automaticamente enquanto você digita.
   carregadas no próximo restart do SSMS.
 - Os snippets aparecem no completion junto com tabelas e colunas.
 
-### Format Document
+### Formatação configurável
 
-- Atalho via clique direito no editor: **Format Document**.
+- Atalho via clique direito no editor: **Format Document** ou `Ctrl+K, Ctrl+Y`.
 - Formatação via ScriptDom (indentação, capitalização, espaçamento).
+- 18 opções configuráveis em `%LOCALAPPDATA%\SqlBeaver\format.json`
+  (keywordCasing, indentationSize, quebras de linha por cláusula, multiline para
+  listas de colunas/WHERE/INSERT, etc.).
 - Avisa antes de formatar quando o script contém comentários (a formatação os
   remove).
 - Erro de sintaxe: não toca no texto original.
 - Suporta desfazer com um único Ctrl+Z.
 
+### Navegação
+
+- **Localizar objeto…** (`Ctrl+K, Ctrl+O`) — filtro as-you-type sobre tabelas,
+  views, procedures e funções do banco ativo; Enter/duplo clique vai para a
+  definição.
+- **Ir para definição** (`Ctrl+K, Ctrl+G`) — palavra sob o caret → abre o
+  `CREATE TABLE` gerado localmente (tabelas) ou `OBJECT_DEFINITION` em nova
+  janela de query (demais objetos).
+- **Localizar referências** — lista os objetos que referenciam o objeto sob o
+  caret (via `sys.sql_expression_dependencies`), abre resultado em nova janela.
+
+### Refatoração
+
+Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
+
+- **Expand wildcard** — substitui `SELECT *` (ou `t.*`) pela lista de colunas do
+  escopo, qualificadas por alias quando há múltiplas tabelas.
+- **Qualify names** / **Remove qualificação** — adiciona ou remove o prefixo de
+  schema nos identificadores de tabela.
+- **Rename alias / @variável** — diálogo de novo nome; substituição
+  token-aware no escopo do statement (alias) ou do batch entre GOs (variável).
+
+### Interface
+
+- Menu **Tools > SQL Beaver** e toolbar **SQL Beaver** com os principais comandos.
+- Atalhos padrão reconfiguráveis em **Tools > Options > Keyboard**:
+  `Ctrl+K, Ctrl+Y` (Format), `Ctrl+K, Ctrl+O` (Localizar objeto),
+  `Ctrl+K, Ctrl+G` (Ir para definição).
+
 ### Guard de execução
 
 - Exige confirmação antes de executar `DELETE` ou `UPDATE` sem cláusula `WHERE`
   (F5).
+- Em ambientes com `confirmExecute: true` (ver **Ambientes**), a confirmação vale
+  para qualquer Execute.
 
 ### Grid de resultados
 
@@ -57,6 +106,17 @@ maiúsculas automaticamente enquanto você digita.
 - **Copy as IN clause** — copia os valores da coluna selecionada como lista `IN (...)`.
 - **Open in Excel** — exporta para `.xlsx` (OpenXML) e abre no app associado;
   respeita a seleção de linhas.
+
+### Sessão
+
+- **Histórico de consultas** — cada Execute grava automaticamente em
+  `%LOCALAPPDATA%\SqlBeaver\history\yyyy-MM-dd.sql` com cabeçalho de horário,
+  servidor e banco. Acessível via menu Tools > SQL Beaver > Histórico de consultas.
+- **Snapshots automáticos** — a cada 60 segundos o SQL Beaver salva o texto de
+  todos os documentos SQL abertos em `%LOCALAPPDATA%\SqlBeaver\sessions\`
+  (deduplicação por hash; índice com os últimos 50 snapshots).
+- **Recuperar consultas…** — abre um diálogo com a lista de snapshots e permite
+  restaurar qualquer aba anterior numa nova janela de query.
 
 ## Instalação
 
