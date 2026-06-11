@@ -150,18 +150,19 @@ namespace SqlBeaver.Tests
             Assert.Equal(SqlContextKind.None, Analyze(".").Kind);
         }
 
-        // ---- digitação livre não dispara enquanto se digita uma keyword ----
+        // ---- digitação livre: prefixo de keyword agora é FreeIdentifier ----
+        // (o completion supre as palavras-chave T-SQL; o supressor antigo foi removido)
 
         [Theory]
         [InlineData("sele")]      // prefixo de SELECT
         [InlineData("SELE")]
         [InlineData("sel")]
         [InlineData("upd")]       // prefixo de UPDATE
-        [InlineData("WHERE x = 1 ord")] // prefixo de ORDER
-        [InlineData("end")]       // keyword exata
-        public void FreeTyping_KeywordPrefix_ReturnsNone(string text)
+        [InlineData("WHERE x = 1 ord")] // "1 ord": palavra anterior "1" não é keyword → livre
+        [InlineData("end")]       // END é keyword, mas como parcial é identificador livre
+        public void FreeTyping_KeywordPrefix_NowFreeIdentifier(string text)
         {
-            Assert.Equal(SqlContextKind.None, Analyze(text).Kind);
+            Assert.Equal(SqlContextKind.FreeIdentifier, Analyze(text).Kind);
         }
 
         [Fact]

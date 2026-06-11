@@ -66,6 +66,8 @@ namespace SqlBeaver.Completion
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Method), "Procedure/Function");
         private static readonly ImageElement DatabaseIcon =
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Database), "Banco de dados");
+        private static readonly ImageElement KeywordIcon =
+            new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.IntellisenseKeyword), "Palavra-chave");
 
         private static readonly DatabaseListCache DbListCache = CreateDbListCache();
 
@@ -212,6 +214,7 @@ namespace SqlBeaver.Completion
                     break;
 
                 default: // FreeIdentifier
+                    BuildKeywordItems(items);
                     BuildSnippetItems(items);
                     BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: false);
                     break;
@@ -391,6 +394,23 @@ namespace SqlBeaver.Completion
                     filterText: suggestion.FilterText,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
                 index++;
+            }
+        }
+
+        private void BuildKeywordItems(ImmutableArray<CompletionItem>.Builder items)
+        {
+            foreach (string keyword in SqlKeywordCompletions.Keywords)
+            {
+                items.Add(new CompletionItem(
+                    displayText: keyword,
+                    source: this,
+                    icon: KeywordIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: string.Empty,
+                    insertText: keyword,
+                    sortText: "2_" + keyword,
+                    filterText: keyword,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
             }
         }
 

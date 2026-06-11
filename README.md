@@ -9,8 +9,10 @@ própria janela de query.
 ### Autocomplete
 
 - **Tabelas e schemas** — após `FROM` / `JOIN` / `INSERT INTO` / `UPDATE`,
-  após `schema.`, e em digitação livre de identificadores; prefixos de keyword
-  são suprimidos automaticamente.
+  após `schema.`, e em digitação livre de identificadores.
+- **Palavras-chave T-SQL** — sugere também as palavras-chave do T-SQL
+  (`SELECT`, `FROM`, `JOIN`, `WHERE`...) na digitação livre — substitui o
+  IntelliSense nativo, que deve ser desativado (ver instalação).
 - **Colunas** com consciência de aliases — após `alias.` (SELECT / WHERE / ON /
   SET); com 2+ tabelas no contexto as colunas são qualificadas automaticamente.
 - **JOIN guiado por FK** — ao digitar `ON` após um JOIN, oferece a cláusula

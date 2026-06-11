@@ -111,10 +111,8 @@ namespace SqlBeaver.Analysis
             if (partial.Length == 0)
                 return SqlContext.None;
 
-            // Digitação livre: silêncio enquanto o parcial ainda pode ser uma keyword.
-            if (SqlKeywords.IsPrefixOfAny(partial))
-                return SqlContext.None;
-
+            // Digitação livre: sempre FreeIdentifier. O completion oferece keywords T-SQL,
+            // snippets e tabelas/schemas; o matcher do VS rankeia o prefixo de keyword no topo.
             return new SqlContext(SqlContextKind.FreeIdentifier, null, partial, partialStart);
         }
 
