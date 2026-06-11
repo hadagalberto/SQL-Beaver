@@ -224,16 +224,19 @@ namespace SqlBeaver.Session
                         });
                     }
 
-                    // Supressão do prompt: só janelas não-salvas SEM arquivo real
-                    // no disco (SQLQueryN), e só com o snapshot verificado.
-                    // Documento com arquivo real e alterações → prompt normal do SSMS.
+                    // Supressão do prompt: só janelas RASCUNHO (sem arquivo real
+                    // no disco OU arquivo na pasta temp — o SSMS 22 cria um .sql
+                    // temporário para cada query nova), e só com o snapshot verificado.
+                    // Documento com arquivo real fora do temp e com alterações →
+                    // prompt normal do SSMS.
                     bool savedFlag;
                     try { savedFlag = doc.Saved; }
                     catch { savedFlag = true; } // em dúvida, não mexer
 
-                    bool fileExistsOnDisk = File.Exists(fullName);
+                    bool fileExists = !string.IsNullOrWhiteSpace(fullName) && File.Exists(fullName);
+                    bool isScratch = PromptSuppressionRule.IsScratchPath(fullName, fileExists, Path.GetTempPath());
 
-                    if (PromptSuppressionRule.ShouldMarkSaved(savedFlag, fileExistsOnDisk, snapshotWritten))
+                    if (PromptSuppressionRule.ShouldMarkSaved(savedFlag, isScratch, snapshotWritten))
                     {
                         try { doc.Saved = true; }
                         catch (Exception markEx)

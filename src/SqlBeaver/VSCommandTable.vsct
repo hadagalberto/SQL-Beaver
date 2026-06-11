@@ -10,12 +10,15 @@
         <Strings><ButtonText>SQL Beaver</ButtonText></Strings>
       </Menu>
       <Menu guid="guidSqlBeaverCmdSet" id="SqlBeaverMenu" priority="0x0700" type="Menu">
-        <Parent guid="guidSHLMainMenu" id="IDG_VS_MM_TOOLSADDINS" />
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolsParentGroup" />
         <Strings><ButtonText>SQL Beaver</ButtonText></Strings>
       </Menu>
     </Menus>
 
     <Groups>
+      <Group guid="guidSqlBeaverCmdSet" id="SqlBeaverToolsParentGroup" priority="0x0300">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
+      </Group>
       <Group guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" priority="0x0100">
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenu" />
       </Group>
@@ -91,6 +94,7 @@
     <GuidSymbol name="guidSqlBeaverCmdSet" value="{D7A9B3E4-5C12-4F8A-9B6D-3E7F1A2C4B5D}">
       <IDSymbol name="SqlBeaverMenu" value="0x1020" />
       <IDSymbol name="SqlBeaverMenuGroup" value="0x1021" />
+      <IDSymbol name="SqlBeaverToolsParentGroup" value="0x1022" />
       <IDSymbol name="SqlBeaverToolbar" value="0x1030" />
       <IDSymbol name="SqlBeaverToolbarGroup" value="0x1031" />
       <IDSymbol name="cmdidFormatDocument" value="0x0100" />
