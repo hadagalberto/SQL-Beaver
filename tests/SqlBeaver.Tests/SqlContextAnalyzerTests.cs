@@ -57,12 +57,37 @@ namespace SqlBeaver.Tests
             Assert.Equal(SqlContextKind.None, Analyze("SELECT * ").Kind);
         }
 
-        [Theory]
-        [InlineData("SELECT @var")]  // variável
-        [InlineData("FROM #tmp")]    // tabela temporária
-        public void VariablesAndTempTables_ReturnNone(string text)
+        [Fact]
+        public void ScalarVariable_InColumnContext_ReturnsNone()
         {
-            Assert.Equal(SqlContextKind.None, Analyze(text).Kind);
+            // @var em posição de expressão (SELECT, WHERE) → sem completion (escalar)
+            Assert.Equal(SqlContextKind.None, Analyze("SELECT @var").Kind);
+        }
+
+        // Mudança intencional v5 C2: FROM #t / #t. / @t. agora produzem contextos para
+        // sugerir colunas de tabelas locais; somente @var em contexto escalar fica None.
+        [Fact]
+        public void TempTableAfterFrom_ReturnsAfterFromJoin()
+        {
+            var ctx = Analyze("FROM #tmp");
+            Assert.Equal(SqlContextKind.AfterFromJoin, ctx.Kind);
+            Assert.Equal("#tmp", ctx.Partial);
+        }
+
+        [Fact]
+        public void TempTableDot_ReturnsAfterDot()
+        {
+            var ctx = Analyze("#tmp.");
+            Assert.Equal(SqlContextKind.AfterDot, ctx.Kind);
+            Assert.Equal("#tmp", ctx.DotPrefix);
+        }
+
+        [Fact]
+        public void TableVarDot_ReturnsAfterDot()
+        {
+            var ctx = Analyze("@tbl.");
+            Assert.Equal(SqlContextKind.AfterDot, ctx.Kind);
+            Assert.Equal("@tbl", ctx.DotPrefix);
         }
 
         [Fact]

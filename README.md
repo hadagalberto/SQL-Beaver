@@ -25,6 +25,9 @@ própria janela de query.
 - **Bancos após `USE`** — sugere os bancos do servidor da conexão ativa.
 - **Ranking por uso** — as tabelas e JOINs que você mais usa sobem para o topo
   das sugestões (aprendido das execuções).
+- **Escopo local** — colunas de tabelas temporárias (`#temp`), variáveis de tabela
+  (`@t`) e CTEs; funções built-in (`GETDATE`, `ISNULL`, `ROW_NUMBER`...) e views
+  de sistema (`sys.objects`, `sys.tables`, `sys.dm_exec_requests`...).
 - As sugestões também incluem os snippets cadastrados (ver abaixo).
 - Silencioso dentro de strings e comentários.
 - Cache de metadata por servidor+database (TTL 10 min); nunca bloqueia a

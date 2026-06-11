@@ -36,9 +36,10 @@ namespace SqlBeaver.Analysis
                 partialStart--;
             string partial = text.Substring(partialStart, caretPosition - partialStart);
 
-            // variáveis (@) e temp tables (#) não são tabelas de catálogo
-            if (partial.Length > 0 && (partial[0] == '@' || partial[0] == '#'))
-                return SqlContext.None;
+            // variáveis escalares (@) e temp tables (#) em contexto não-tabela não recebem completion.
+            // Esta verificação é feita PÓS-detecção de contexto para permitir que FROM #t, #t. e @t.
+            // ainda produzam AfterFromJoin / AfterDot (ver comentários abaixo — mudança intencional v5 C2).
+            bool partialIsLocalName = partial.Length > 0 && (partial[0] == '@' || partial[0] == '#');
 
             int i = partialStart - 1;
 
@@ -46,10 +47,15 @@ namespace SqlBeaver.Analysis
             if (i >= start && text[i] == '.')
             {
                 string prefix = ReadIdentifierBackwards(text, start, i - 1);
+                // #t. e @t. : prefix pode começar com # ou @ — produz AfterDot (intencional v5 C2)
                 return prefix.Length == 0
                     ? SqlContext.None
                     : new SqlContext(SqlContextKind.AfterDot, prefix, partial, partialStart);
             }
+
+            // Se o partial começa com @ ou # e não estamos num contexto de tabela, bloquear agora.
+            // A verificação de FROM/JOIN/etc. é feita logo abaixo; aguardamos mais.
+            // Para o caso em que não há palavra anterior (ex.: "SELECT @x"), bloqueamos ao final.
 
             // palavra-chave anterior (separada por whitespace)
             int beforeWhitespace = i;
@@ -61,6 +67,7 @@ namespace SqlBeaver.Analysis
             // vírgula dentro de parênteses (paren depth > 0) → ColumnContext (função/IN-list; mudança intencional)
             if (i >= start && text[i] == ',')
             {
+                if (partialIsLocalName) return SqlContext.None; // @var / #tmp após vírgula = escalar
                 if (state.ParenDepth != 0)
                     return new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart);
 
@@ -75,11 +82,20 @@ namespace SqlBeaver.Analysis
             string previousWord = text.Substring(i + 1, wordEnd - (i + 1));
 
             if (hasWhitespaceGap && IsAny(previousWord, FromKeywords))
+            {
+                // FROM #t, UPDATE @t, INTO #t → AfterFromJoin (intencional v5 C2)
                 return new SqlContext(SqlContextKind.AfterFromJoin, null, partial, partialStart,
                     previousWord.ToUpperInvariant());
+            }
 
             if (hasWhitespaceGap && string.Equals(previousWord, "JOIN", StringComparison.OrdinalIgnoreCase))
+            {
+                // JOIN #t → AfterJoin (intencional v5 C2)
                 return new SqlContext(SqlContextKind.AfterJoin, null, partial, partialStart, "JOIN");
+            }
+
+            // A partir daqui, bloquear @var / #tmp (contexto de expressão/coluna)
+            if (partialIsLocalName) return SqlContext.None;
 
             if (hasWhitespaceGap && IsAny(previousWord, ColumnKeywords))
                 return new SqlContext(SqlContextKind.ColumnContext, null, partial, partialStart);

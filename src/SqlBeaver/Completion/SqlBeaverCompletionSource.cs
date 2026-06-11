@@ -68,6 +68,8 @@ namespace SqlBeaver.Completion
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Database), "Banco de dados");
         private static readonly ImageElement KeywordIcon =
             new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.IntellisenseKeyword), "Palavra-chave");
+        private static readonly ImageElement BuiltinIcon =
+            new ImageElement(new ImageId(KnownImageIds.ImageCatalogGuid, KnownImageIds.Method), "Função built-in");
 
         private static readonly DatabaseListCache DbListCache = CreateDbListCache();
 
@@ -82,6 +84,9 @@ namespace SqlBeaver.Completion
         private ActiveConnection _connection;
         private bool _loggedContentType;
         private static bool _loggedFirstItems;
+
+        // Tabelas locais do batch atual; populado em GetCompletionContextAsync antes de BuildItems.
+        private IReadOnlyList<LocalTableDef> _pendingLocals;
 
         // Diagnóstico: contador global de instâncias. Se aparecer #1 E #2 nos logs,
         // há mais de uma extensão SQL Beaver carregada (instalação duplicada) — duas
@@ -158,6 +163,9 @@ namespace SqlBeaver.Completion
                 if (metadata == null)
                     return Task.FromResult(CompletionContext.Empty); // carga disparada em background
 
+                // Scan local objects (O(64 KB)) para #temp, @tabela, CTEs.
+                _pendingLocals = ScanLocals(triggerLocation);
+
                 ImmutableArray<CompletionItem> items = BuildItems(context, metadata, scope, connection);
 
                 if (!_loggedFirstItems)
@@ -185,24 +193,30 @@ namespace SqlBeaver.Completion
         {
             var items = ImmutableArray.CreateBuilder<CompletionItem>();
 
+            // Scan once per popup — O(64 KB), acceptable.
+            // We need the full buffer text + caret; triggerLocation is available in GetCompletionContextAsync
+            // but not here. We pass locals through BuildItems via the AnalyzeAt result path — see below.
+            // (locals are captured via the _pendingLocals field set just before BuildItems is called)
+            IReadOnlyList<LocalTableDef> locals = _pendingLocals ?? Array.Empty<LocalTableDef>();
+
             switch (context.Kind)
             {
                 case SqlContextKind.AfterDot:
-                    BuildDotItems(items, context.DotPrefix, metadata, scope);
+                    BuildDotItems(items, context.DotPrefix, metadata, scope, locals);
                     break;
 
                 case SqlContextKind.ColumnContext:
-                    BuildColumnItems(items, metadata, scope);
+                    BuildColumnItems(items, metadata, scope, locals);
                     break;
 
                 case SqlContextKind.AfterJoin:
                     BuildFkJoinItems(items, metadata, scope, connection, context.Partial);
-                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: true);
+                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: true, locals);
                     break;
 
                 case SqlContextKind.AfterFromJoin:
                     bool alias = string.Equals(context.TriggerKeyword, "FROM", StringComparison.OrdinalIgnoreCase);
-                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: alias);
+                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: alias, locals);
                     break;
 
                 case SqlContextKind.AfterExec:
@@ -216,7 +230,7 @@ namespace SqlBeaver.Completion
                 default: // FreeIdentifier
                     BuildKeywordItems(items);
                     BuildSnippetItems(items);
-                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: false);
+                    BuildTableAndSchemaItems(items, metadata, scope, connection, withAlias: false, locals);
                     break;
             }
 
@@ -293,9 +307,34 @@ namespace SqlBeaver.Completion
 
         private void BuildDotItems(
             ImmutableArray<CompletionItem>.Builder items, string prefix,
-            DbMetadata metadata, IReadOnlyList<TableRef> scope)
+            DbMetadata metadata, IReadOnlyList<TableRef> scope,
+            IReadOnlyList<LocalTableDef> locals)
         {
-            // 1) alias (ou nome de tabela usado como qualificador) do escopo → colunas
+            // 0) #temp. / @tabela. / cte. → colunas da definição local (antes do cache)
+            foreach (LocalTableDef local in locals)
+            {
+                bool directMatch  = string.Equals(local.Name, prefix, StringComparison.OrdinalIgnoreCase);
+                // via alias: TableRef cujo Table == local.Name
+                bool aliasedMatch = false;
+                foreach (TableRef tr in scope)
+                {
+                    if (tr.Alias != null &&
+                        string.Equals(tr.Alias, prefix, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(tr.Table, local.Name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        aliasedMatch = true;
+                        break;
+                    }
+                }
+                if (directMatch || aliasedMatch)
+                {
+                    foreach (ColumnEntry col in local.Columns)
+                        items.Add(LocalColumnItem(col, qualifier: null, local.Name));
+                    return;
+                }
+            }
+
+            // 1) alias (ou nome de tabela usado como qualificador) do escopo → colunas do cache
             string tableKey = ResolveScopeTableKey(prefix, metadata, scope);
             if (tableKey != null &&
                 metadata.ColumnsByTable.TryGetValue(tableKey, out IReadOnlyList<ColumnEntry> columns))
@@ -315,9 +354,24 @@ namespace SqlBeaver.Completion
 
         private void BuildColumnItems(
             ImmutableArray<CompletionItem>.Builder items,
-            DbMetadata metadata, IReadOnlyList<TableRef> scope)
+            DbMetadata metadata, IReadOnlyList<TableRef> scope,
+            IReadOnlyList<LocalTableDef> locals)
         {
             bool qualify = scope.Count > 1;
+
+            // Colunas de tabelas locais que estão no escopo
+            foreach (TableRef tableRef in scope)
+            {
+                LocalTableDef local = FindLocal(locals, tableRef.Table);
+                if (local == null) continue;
+
+                string qualifier = qualify ? (tableRef.Alias ?? tableRef.Table) : null;
+                string origin = tableRef.Alias ?? tableRef.Table;
+                foreach (ColumnEntry col in local.Columns)
+                    items.Add(LocalColumnItem(col, qualifier, origin));
+            }
+
+            // Colunas do cache
             foreach (TableRef tableRef in scope)
             {
                 string key = ResolveTableKey(tableRef, metadata);
@@ -329,6 +383,21 @@ namespace SqlBeaver.Completion
                 string origin = tableRef.Alias ?? tableRef.Table;
                 foreach (ColumnEntry column in columns)
                     items.Add(ColumnItem(column, qualifier, origin));
+            }
+
+            // Funções built-in (sortText "4_", abaixo das colunas reais)
+            foreach ((string name, string signature) in SqlBuiltins.Functions)
+            {
+                items.Add(new CompletionItem(
+                    displayText: name,
+                    source: this,
+                    icon: BuiltinIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: signature,
+                    insertText: name,
+                    sortText: "4_" + name,
+                    filterText: name,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
             }
         }
 
@@ -435,7 +504,8 @@ namespace SqlBeaver.Completion
         private void BuildTableAndSchemaItems(
             ImmutableArray<CompletionItem>.Builder items,
             DbMetadata metadata, IReadOnlyList<TableRef> scope,
-            ActiveConnection connection, bool withAlias)
+            ActiveConnection connection, bool withAlias,
+            IReadOnlyList<LocalTableDef> locals = null)
         {
             foreach (string schema in metadata.Schemas)
                 items.Add(new CompletionItem(SqlIdentifier.Bracket(schema), this, SchemaIcon));
@@ -469,6 +539,88 @@ namespace SqlBeaver.Completion
                     filterText: table.Name,
                     attributeIcons: ImmutableArray<ImageElement>.Empty));
             }
+
+            // Tabelas locais: #temp, @tabela, CTEs (sortText "4_", abaixo das tabelas do catálogo)
+            if (locals != null)
+            {
+                foreach (LocalTableDef local in locals)
+                {
+                    string kindSuffix = local.Kind == LocalTableKind.Temp    ? "#temp"
+                                      : local.Kind == LocalTableKind.TableVar ? "@tabela"
+                                      : "CTE";
+                    items.Add(new CompletionItem(
+                        displayText: local.Name,
+                        source: this,
+                        icon: TableIcon,
+                        filters: ImmutableArray<CompletionFilter>.Empty,
+                        suffix: kindSuffix,
+                        insertText: local.Name,
+                        sortText: "4_" + local.Name,
+                        filterText: local.Name,
+                        attributeIcons: ImmutableArray<ImageElement>.Empty));
+                }
+            }
+
+            // Views de sistema (sortText "4_", mesmo bucket das locais)
+            foreach (string sysView in SqlBuiltins.SystemViews)
+            {
+                // displayText = parte após o último '.' para brevidade; filterText = nome completo
+                int dot = sysView.LastIndexOf('.');
+                string display = dot >= 0 ? sysView.Substring(dot + 1) : sysView;
+                items.Add(new CompletionItem(
+                    displayText: display,
+                    source: this,
+                    icon: TableIcon,
+                    filters: ImmutableArray<CompletionFilter>.Empty,
+                    suffix: dot >= 0 ? sysView.Substring(0, dot) : string.Empty,
+                    insertText: sysView,
+                    sortText: "4_" + sysView,
+                    filterText: sysView,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty));
+            }
+        }
+
+        // ---- helpers para objetos locais ----
+
+        private static IReadOnlyList<LocalTableDef> ScanLocals(SnapshotPoint point)
+        {
+            ITextSnapshot snapshot = point.Snapshot;
+            int caret = point.Position;
+            int windowStart = Math.Max(0, caret - MaxAnalysisWindow);
+            int windowEnd   = Math.Min(snapshot.Length, caret + MaxAnalysisWindow);
+            string fullText = snapshot.GetText(windowStart, windowEnd - windowStart);
+            int caretInWindow = caret - windowStart;
+            return LocalObjectScanner.Scan(fullText, caretInWindow);
+        }
+
+        private static LocalTableDef FindLocal(IReadOnlyList<LocalTableDef> locals, string tableName)
+        {
+            foreach (LocalTableDef local in locals)
+            {
+                if (string.Equals(local.Name, tableName, StringComparison.OrdinalIgnoreCase))
+                    return local;
+            }
+            return null;
+        }
+
+        private CompletionItem LocalColumnItem(ColumnEntry column, string qualifier, string origin)
+        {
+            string insert = qualifier == null
+                ? SqlIdentifier.Bracket(column.Name)
+                : SqlIdentifier.Bracket(qualifier) + "." + SqlIdentifier.Bracket(column.Name);
+            string typePart = string.IsNullOrEmpty(column.SqlType) ? "" : column.SqlType + " ";
+            string suffix   = typePart + "— " + origin;
+
+            return new CompletionItem(
+                displayText: column.Name,
+                source: this,
+                icon: ColumnIcon,
+                filters: ImmutableArray<CompletionFilter>.Empty,
+                suffix: suffix,
+                insertText: insert,
+                sortText: column.Name,
+                filterText: column.Name,
+                attributeIcons: ImmutableArray<ImageElement>.Empty);
         }
 
         private static string ResolveScopeTableKey(
