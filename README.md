@@ -98,8 +98,13 @@ maiúsculas automaticamente enquanto você digita.
 - **Placeholders navegáveis** — snippets com `$1$`, `$2$`, ... `$0$` (e o formato
   `${1:texto padrão}$`) viram campos: após expandir, **Tab** pula para o próximo
   campo, **Shift+Tab** volta, **Esc** encerra. (`$cursor$` continua valendo como `$0$`.)
-- Personalizável em `%LOCALAPPDATA%\SqlBeaver\snippets.json` — as alterações são
-  carregadas no próximo restart do SSMS.
+- Personalizável em `%LOCALAPPDATA%\SqlBeaver\snippets.json`.
+- **Gerenciador de snippets** — **Snippets…** (Tools > SQL Beaver ou clique direito
+  no editor) abre um diálogo CRUD: lista à esquerda (atalho + título), campos
+  shortcut/título/descrição/expansão à direita; **Novo**, **Salvar**, **Excluir**.
+  O atalho é obrigatório e único (case-insensitive). Ao salvar, grava só os snippets
+  de usuário no `snippets.json` e recarrega o catálogo em memória — sem precisar
+  reiniciar o SSMS.
 - Os snippets aparecem no completion junto com tabelas e colunas.
 
 ### Formatação configurável
@@ -214,14 +219,20 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 - **Snapshots automáticos** — a cada 60 segundos o SQL Beaver salva o texto de
   todos os documentos SQL abertos em `%LOCALAPPDATA%\SqlBeaver\sessions\`
   (deduplicação por hash; índice com os últimos 50 snapshots).
-- **Recuperar consultas…** — abre um diálogo com a lista de snapshots e permite
-  restaurar qualquer aba anterior numa nova janela de query.
+- **Recuperar consultas…** — abre um diálogo com busca as-you-type (por título OU
+  conteúdo dos snapshots), lista (título / servidor·db / quando) e preview
+  monoespaçado read-only do snapshot selecionado. Duplo-clique / **Abrir** restaura
+  a aba escolhida numa nova janela de query.
 - **Restauração automática de sessão** — fechou o SSMS, ele reabre com as mesmas
   abas. Janelas de query não salvas (SQLQueryN) são persistidas continuamente
   (a cada 5 segundos, na troca de janela e no fechamento) em
   `%LOCALAPPDATA%\SqlBeaver\lastsession\` e nunca pedem confirmação ao fechar;
   o conteúdo é reaberto automaticamente no próximo início. Arquivos reais com
   alterações continuam exibindo o prompt normal de salvar do SSMS.
+- **Summarize Script** — **Summarize Script…** (Tools > SQL Beaver ou clique direito)
+  lista a estrutura do documento ativo (Tipo | Linha | Resumo de até 80 caracteres)
+  por statement de topo (SELECT, INSERT, UPDATE, CREATE PROCEDURE, IF, EXEC…).
+  Duplo-clique / **Ir para** navega o editor até a linha do statement.
 
 ## Instalação
 

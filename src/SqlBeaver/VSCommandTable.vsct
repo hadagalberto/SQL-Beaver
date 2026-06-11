@@ -72,6 +72,14 @@
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Objetos inválidos…</ButtonText></Strings>
       </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidManageSnippets" priority="0x010B" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>Snippets…</ButtonText></Strings>
+      </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidSummarizeScript" priority="0x010C" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>Summarize Script…</ButtonText></Strings>
+      </Button>
       <Button guid="guidSqlBeaverCmdSet" id="cmdidManageFormatStyles" priority="0x010D" type="Button">
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Gerenciar estilos de formatação…</ButtonText></Strings>
@@ -113,6 +121,12 @@
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidInvalidObjects" priority="0x010A">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidManageSnippets" priority="0x010B">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidSummarizeScript" priority="0x010C">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidManageFormatStyles" priority="0x010D">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
@@ -144,6 +158,8 @@
       <IDSymbol name="cmdidInsertColumns"        value="0x0108" />
       <IDSymbol name="cmdidAnalyzeScript"        value="0x0109" />
       <IDSymbol name="cmdidInvalidObjects"       value="0x010A" />
+      <IDSymbol name="cmdidManageSnippets"       value="0x010B" />
+      <IDSymbol name="cmdidSummarizeScript"      value="0x010C" />
       <IDSymbol name="cmdidManageFormatStyles"   value="0x010D" />
     </GuidSymbol>
   </Symbols>

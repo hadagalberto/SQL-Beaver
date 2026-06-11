@@ -393,6 +393,56 @@ namespace SqlBeaver.Commands
             }
         }
 
+        public static void ManageSnippets()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                IntPtr hwnd;
+                try { hwnd = new IntPtr((int)dte.MainWindow.HWnd); }
+                catch { hwnd = IntPtr.Zero; }
+                var owner = new NativeWindowWrapper(hwnd);
+                Snippets.SnippetsManagerDialog.ShowManager(owner);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Snippets", ex);
+                ShowStatus("falha ao abrir gerenciador de snippets — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void SummarizeScript()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus("Summarize Script: nenhum documento ativo."); return; }
+
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                if (string.IsNullOrWhiteSpace(text)) { ShowStatus("Summarize Script: documento vazio."); return; }
+
+                System.Collections.Generic.IReadOnlyList<Analysis.OutlineItem> items =
+                    Analysis.ScriptOutlineBuilder.Build(text);
+                if (items.Count == 0) { ShowStatus("Summarize Script: nenhum statement encontrado."); return; }
+
+                IntPtr hwnd;
+                try { hwnd = new IntPtr((int)dte.MainWindow.HWnd); }
+                catch { hwnd = IntPtr.Zero; }
+                var owner = new NativeWindowWrapper(hwnd);
+                Analysis.SummarizeScriptDialog.Show(items, doc, owner);
+
+                ShowStatus($"estrutura: {items.Count} statement(s).");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Summarize Script", ex);
+                ShowStatus("falha em Summarize Script — veja Output > SQL Beaver");
+            }
+        }
+
         public static void SetFormatStyle(string styleName)
         {
             try

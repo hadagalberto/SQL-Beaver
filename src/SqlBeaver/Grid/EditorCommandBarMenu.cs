@@ -30,6 +30,8 @@ namespace SqlBeaver.Grid
         private static CommandBarButton _environmentsButton;
 
         private static CommandBarButton _insertColumnsButton;
+        private static CommandBarButton _summarizeScriptButton;
+        private static CommandBarButton _manageSnippetsButton;
 
         // Format style submenu
         private static CommandBarPopup _formatStylePopup;
@@ -75,6 +77,8 @@ namespace SqlBeaver.Grid
                 _recoverSessionButton = AddButton(editorBar, "SQL Beaver: Recuperar consultas…",   OnRecoverSession, beginGroup: false);
                 _environmentsButton   = AddButton(editorBar, "SQL Beaver: Ambientes (cores)…",     OnEnvironments,   beginGroup: false);
                 _insertColumnsButton  = AddButton(editorBar, "SQL Beaver: Inserir colunas…",        OnInsertColumns,  beginGroup: true);
+                _summarizeScriptButton= AddButton(editorBar, "SQL Beaver: Summarize Script…",       OnSummarizeScript, beginGroup: false);
+                _manageSnippetsButton = AddButton(editorBar, "SQL Beaver: Snippets…",               OnManageSnippets, beginGroup: false);
 
                 // Format style submenu
                 _formatStylePopup = (CommandBarPopup)editorBar.Controls.Add(
@@ -373,6 +377,34 @@ namespace SqlBeaver.Grid
             {
                 Log.Error("Inserir colunas", ex);
                 ShowStatus("falha em Inserir colunas — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnSummarizeScript(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Commands.EditorCommands.SummarizeScript();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Summarize Script", ex);
+                ShowStatus("falha em Summarize Script — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnManageSnippets(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Commands.EditorCommands.ManageSnippets();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Snippets", ex);
+                ShowStatus("falha ao abrir gerenciador de snippets — veja Output > SQL Beaver");
             }
         }
 

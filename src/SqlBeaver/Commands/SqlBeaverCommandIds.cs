@@ -19,6 +19,8 @@ namespace SqlBeaver.Commands
         public const int InsertColumns       = 0x0108;
         public const int AnalyzeScript        = 0x0109;
         public const int InvalidObjects       = 0x010A;
+        public const int ManageSnippets       = 0x010B;
+        public const int SummarizeScript      = 0x010C;
         public const int ManageFormatStyles  = 0x010D;
     }
 }
