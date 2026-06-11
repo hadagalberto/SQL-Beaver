@@ -20,6 +20,7 @@ namespace SqlBeaver.Metadata
             public DateTime LoadedUtc;
             public DateTime LastFailureUtc;
             public Task PendingLoad;
+            public Task LastLoad;   // referência para a task mais recente de LoadIntoEntryAsync
             public DateTime LoadStartedUtc;
             public int LoadGeneration;
         }
@@ -87,6 +88,7 @@ namespace SqlBeaver.Metadata
                     entry.LoadGeneration++;
                     entry.LoadStartedUtc = now;
                     Task load = LoadIntoEntryAsync(entry, request, entry.LoadGeneration);
+                    entry.LastLoad = load;
                     // Carga que completou sincronamente já limpou/atualizou o estado —
                     // não guardar um task completado, senão ele bloquearia recargas futuras.
                     if (!load.IsCompleted)
@@ -162,13 +164,28 @@ namespace SqlBeaver.Metadata
         /// órfão — inofensivo por design.</summary>
         public void InvalidateAll() => _entries.Clear();
 
-        internal Task GetPendingLoadForTest(string server, string database)
+        internal Task GetPendingLoadForTestAsync(string server, string database)
         {
             if (_entries.TryGetValue(Key(server, database), out Entry entry))
             {
                 lock (entry)
                 {
                     return entry.PendingLoad ?? Task.CompletedTask;
+                }
+            }
+            return Task.CompletedTask;
+        }
+
+        /// <summary>Retorna a task mais recente de LoadIntoEntryAsync (inclusive órfãos já
+        /// abandonados pelo watchdog). Usado apenas em testes de concorrência que precisam
+        /// aguardar a conclusão de uma carga cuja task não é mais acessível via PendingLoad.</summary>
+        internal Task GetLastLoadForTestAsync(string server, string database)
+        {
+            if (_entries.TryGetValue(Key(server, database), out Entry entry))
+            {
+                lock (entry)
+                {
+                    return entry.LastLoad ?? Task.CompletedTask;
                 }
             }
             return Task.CompletedTask;

@@ -120,3 +120,14 @@ aliases do escopo ou com keyword → sufixo numérico (`p2`). Identificadores se
   DangerousStatementDetector, contextos novos do analisador (~114 → ~180 testes).
 - UAT manual: handlers de Tab/Execute, Format, ScriptDom e OpenXml no runtime do SSMS, popup de colunas
   e FK-JOIN contra o database real (Entra MFA via provider clonado, validado no v1).
+
+## Implementado — desvios e refinamentos (registrados na entrega, 2026-06-10)
+
+- Vírgula em lista de FROM (`FROM A a, `) sugere TABELAS (AfterFromJoin), não colunas — caminhada para trás até a keyword decide.
+- O alvo de `UPDATE` entra no escopo do statement (colunas funcionam em `UPDATE T SET |`).
+- Sugestões FK do MESMO schema vêm primeiro (pedido de UAT); ordem preservada por sortText indexado.
+- Item FK: displayText com separador " — ON ..."; filterText = nome da tabela relacionada.
+- Format Document AVISA e pede confirmação quando o script contém comentários (ScriptDom os descartaria silenciosamente).
+- Guard ignora `UPDATE STATISTICS` e DELETE/UPDATE em contexto de trigger (AFTER/FOR/OF/INSTEAD).
+- Snippets: handler de Tab com guardas contra duplo-Tab; itens no completion inserem a expansão com caret no fim (sem $cursor$ nesse caminho).
+- Modelos de snippet usam [DataContract(Namespace = "")] — o namespace default reflete atributos de assembly e puxa DLL do VS SDK ausente fora do SSMS.
