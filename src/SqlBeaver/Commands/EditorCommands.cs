@@ -2,9 +2,11 @@ using System;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
+using SqlBeaver.Analysis;
 using SqlBeaver.Diagnostics;
 using SqlBeaver.Environments;
 using SqlBeaver.Navigation;
+using SqlBeaver.Refactoring;
 using SqlBeaver.Session;
 
 namespace SqlBeaver.Commands
@@ -182,6 +184,70 @@ namespace SqlBeaver.Commands
             {
                 Log.Error("Ambientes (cores)", ex);
                 ShowStatus("falha ao abrir editor de ambientes — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void RunCurrentStatement()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus("nenhum documento ativo."); return; }
+
+                // Read full document text (CRLF as-is — TextPosition expects the same string).
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+
+                // Compute caret absolute offset in the document string.
+                // ActivePoint is 1-based line/column; we reconstruct the offset by counting chars.
+                TextSelection sel = doc.Selection;
+                int caretLine   = sel.ActivePoint.Line;
+                int caretColumn = sel.ActivePoint.DisplayColumn; // 1-based, counts each char as 1
+
+                // Convert 1-based line/col → 0-based char offset in 'text'
+                // (same CRLF interpretation as TextPosition.FromOffset)
+                int caretOffset = 0;
+                int currentLine = 1;
+                for (int i = 0; i < text.Length; i++)
+                {
+                    if (currentLine == caretLine)
+                    {
+                        caretOffset = i + (caretColumn - 1);
+                        break;
+                    }
+                    if (text[i] == '\n')
+                        currentLine++;
+                }
+                // Edge case: caret on last line and loop ended without break
+                if (currentLine == caretLine && caretOffset == 0 && caretLine > 1)
+                    caretOffset = text.Length;
+
+                StatementBounds bounds = StatementScopeAnalyzer.GetStatementBoundsAt(text, caretOffset);
+
+                if (bounds.Length == 0)
+                {
+                    ShowStatus("nenhum statement sob o cursor.");
+                    return;
+                }
+
+                // Convert start and end offsets → 1-based line/col for MoveToLineAndOffset
+                TextPosition.FromOffset(text, bounds.Start, out int startLine, out int startCol);
+                TextPosition.FromOffset(text, bounds.Start + bounds.Length, out int endLine, out int endCol);
+
+                // Select the statement range in the editor
+                sel.MoveToLineAndOffset(startLine, startCol, Extend: false);
+                sel.MoveToLineAndOffset(endLine, endCol, Extend: true);
+
+                // Fire SSMS execute — ExecuteGuard intercepts this and handles confirmation/history
+                dte.ExecuteCommand("Query.Execute");
+
+                Log.Info($"RunCurrentStatement: executado statement em L{startLine}–L{endLine}.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Executar statement atual", ex);
+                ShowStatus("falha em Executar statement atual — veja Output > SQL Beaver");
             }
         }
     }

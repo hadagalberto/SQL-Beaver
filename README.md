@@ -126,7 +126,13 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 - Menu **Tools > SQL Beaver** e toolbar **SQL Beaver** com os principais comandos.
 - Atalhos padrão reconfiguráveis em **Tools > Options > Keyboard**:
   `Ctrl+K, Ctrl+Y` (Format), `Ctrl+K, Ctrl+O` (Localizar objeto),
-  `Ctrl+K, Ctrl+G` (Ir para definição).
+  `Ctrl+K, Ctrl+G` (Ir para definição),
+  `Ctrl+Shift+F5` (Executar statement atual).
+- **Executar statement atual (`Ctrl+Shift+F5`)**: executa só o statement sob o cursor
+  — sem precisar selecionar nada. O SQL Beaver detecta os limites do statement (separadores
+  `;`/`GO` e divisão implícita por palavras-chave), seleciona o trecho e dispara o Execute
+  do SSMS. A seleção permanece visível após a execução (feedback do que foi rodado). O guard
+  de execução (DELETE/UPDATE sem WHERE, `confirmExecute`) continua ativo normalmente.
 
 ### Guard de execução
 

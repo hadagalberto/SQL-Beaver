@@ -14,6 +14,7 @@ namespace SqlBeaver.Commands
         public const int FindReferences   = 0x0103;
         public const int QueryHistory     = 0x0104;
         public const int RecoverSession   = 0x0105;
-        public const int Environments     = 0x0106;
+        public const int Environments        = 0x0106;
+        public const int RunCurrentStatement = 0x0107;
     }
 }

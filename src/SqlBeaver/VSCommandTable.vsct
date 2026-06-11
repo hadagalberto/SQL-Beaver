@@ -56,6 +56,10 @@
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Ambientes (cores)…</ButtonText></Strings>
       </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidRunCurrentStatement" priority="0x0107" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>Executar statement atual</ButtonText></Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -81,12 +85,16 @@
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidEnvironments" priority="0x0106">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidRunCurrentStatement" priority="0x0107">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
   </CommandPlacements>
 
   <KeyBindings>
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidFormatDocument" editor="guidVSStd97" key1="K" mod1="Control" key2="Y" mod2="Control" />
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidFindObject" editor="guidVSStd97" key1="K" mod1="Control" key2="O" mod2="Control" />
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidGoToDefinition" editor="guidVSStd97" key1="K" mod1="Control" key2="G" mod2="Control" />
+    <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidRunCurrentStatement" editor="guidVSStd97" key1="VK_F5" mod1="Control Shift" />
   </KeyBindings>
 
   <Symbols>
@@ -103,7 +111,8 @@
       <IDSymbol name="cmdidFindReferences" value="0x0103" />
       <IDSymbol name="cmdidQueryHistory" value="0x0104" />
       <IDSymbol name="cmdidRecoverSession" value="0x0105" />
-      <IDSymbol name="cmdidEnvironments"   value="0x0106" />
+      <IDSymbol name="cmdidEnvironments"         value="0x0106" />
+      <IDSymbol name="cmdidRunCurrentStatement"  value="0x0107" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>

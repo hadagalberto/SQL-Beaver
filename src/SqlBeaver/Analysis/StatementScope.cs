@@ -3,6 +3,13 @@ using System.Collections.Generic;
 
 namespace SqlBeaver.Analysis
 {
+    /// <summary>Byte-offset span [Start, Start+Length) within a string.</summary>
+    public struct StatementBounds
+    {
+        public int Start;
+        public int Length;
+    }
+
     public sealed class TableRef
     {
         /// <summary>Schema, ou null quando o nome não foi qualificado.</summary>
@@ -50,6 +57,124 @@ namespace SqlBeaver.Analysis
         {
             "UNION", "ALL", "EXCEPT", "INTERSECT",
         };
+
+        /// <summary>Bounds [Start, Start+Length) of the statement that contains (or ends at)
+        /// caretPosition, using the SAME partitioning as GetTablesInScope (;/GO/implicit starters
+        /// with UNION/INSERT-SELECT/WITH-DML absorption). Leading/trailing whitespace is trimmed.</summary>
+        public static StatementBounds GetStatementBoundsAt(string text, int caretPosition)
+        {
+            if (string.IsNullOrEmpty(text))
+                return new StatementBounds { Start = 0, Length = 0 };
+
+            int clampedCaret = Math.Max(0, Math.Min(caretPosition, text.Length));
+
+            // Walk through the text collecting statement boundaries (same state-machine as GetTablesInScope).
+            int statementStart = 0;
+            int parenDepth = 0;
+            string statementStarter = null;
+            bool absorbedDml = false;
+            string lastWord = null;
+            bool inLineComment = false, inString = false, inQuotedIdent = false;
+            int blockCommentDepth = 0;
+
+            int i = 0;
+            while (i < text.Length)
+            {
+                char c = text[i];
+
+                if (inLineComment) { if (c == '\n') inLineComment = false; i++; continue; }
+                if (blockCommentDepth > 0)
+                {
+                    if (c == '*' && i + 1 < text.Length && text[i + 1] == '/') { blockCommentDepth--; i += 2; continue; }
+                    if (c == '/' && i + 1 < text.Length && text[i + 1] == '*') { blockCommentDepth++; i += 2; continue; }
+                    i++; continue;
+                }
+                if (inString) { if (c == '\'') inString = false; i++; continue; }
+                if (inQuotedIdent) { if (c == '"') inQuotedIdent = false; i++; continue; }
+
+                if (c == '-' && i + 1 < text.Length && text[i + 1] == '-') { inLineComment = true; i += 2; continue; }
+                if (c == '/' && i + 1 < text.Length && text[i + 1] == '*') { blockCommentDepth = 1; i += 2; continue; }
+                if (c == '\'') { inString = true; i++; continue; }
+                if (c == '"') { inQuotedIdent = true; i++; continue; }
+                if (c == '(') { parenDepth++; i++; continue; }
+                if (c == ')') { if (parenDepth > 0) parenDepth--; i++; continue; }
+
+                if (c == ';' && parenDepth == 0)
+                {
+                    if (clampedCaret >= statementStart && clampedCaret <= i)
+                        return TrimmedBounds(text, statementStart, i);
+                    statementStart = i + 1;
+                    parenDepth = 0; statementStarter = null; absorbedDml = false; lastWord = null;
+                    i++; continue;
+                }
+
+                if (c == '[' || IsIdentifierStart(c))
+                {
+                    int tokenStart = i;
+                    string token = ReadIdentifier(text, ref i);
+
+                    if (parenDepth == 0 && string.Equals(token, "GO", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (clampedCaret >= statementStart && clampedCaret <= tokenStart)
+                            return TrimmedBounds(text, statementStart, tokenStart);
+                        statementStart = i;
+                        statementStarter = null; absorbedDml = false; lastWord = null;
+                        continue;
+                    }
+
+                    if (parenDepth == 0 && StatementStarters.Contains(token))
+                    {
+                        if (statementStarter == null)
+                        {
+                            statementStarter = token;
+                        }
+                        else if (string.Equals(token, "SELECT", StringComparison.OrdinalIgnoreCase) &&
+                                 lastWord != null && CompoundConnectors.Contains(lastWord))
+                        {
+                            // compound query (UNION/EXCEPT/INTERSECT): same statement
+                        }
+                        else if (DmlStarters.Contains(token) && AbsorbingStarters.Contains(statementStarter) && !absorbedDml)
+                        {
+                            absorbedDml = true;
+                        }
+                        else
+                        {
+                            // new implicit statement: caret AT tokenStart belongs to new statement
+                            if (clampedCaret >= statementStart && clampedCaret < tokenStart)
+                                return TrimmedBounds(text, statementStart, tokenStart);
+                            statementStart = tokenStart;
+                            statementStarter = token;
+                            absorbedDml = false;
+                        }
+                    }
+
+                    if (parenDepth == 0)
+                        lastWord = token;
+
+                    continue;
+                }
+
+                i++;
+            }
+
+            // caret is in (or past) the last statement
+            return TrimmedBounds(text, statementStart, text.Length);
+        }
+
+        private static StatementBounds TrimmedBounds(string text, int rawStart, int rawEnd)
+        {
+            // trim leading whitespace
+            int start = rawStart;
+            while (start < rawEnd && char.IsWhiteSpace(text[start]))
+                start++;
+
+            // trim trailing whitespace
+            int end = rawEnd;
+            while (end > start && char.IsWhiteSpace(text[end - 1]))
+                end--;
+
+            return new StatementBounds { Start = start, Length = end - start };
+        }
 
         public static IReadOnlyList<TableRef> GetTablesInScope(string text, int caretPosition)
         {
