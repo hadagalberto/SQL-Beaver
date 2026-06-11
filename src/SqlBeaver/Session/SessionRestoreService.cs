@@ -255,7 +255,15 @@ namespace SqlBeaver.Session
             foreach (string cap in staleCaptions)
                 _verifiedByCaption.Remove(cap);
 
-            // Remove tab-*.sql órfãos (docs fechados / numeração encolhida)
+            // Conjunto vazio = SSMS fechando ou sem abas SQL; sobrescrever o índice
+            // com vazio apagaria a sessão a ser restaurada. Preservamos o último
+            // estado não-vazio (incluindo os tab-*.sql no disco). Consequência
+            // aceita: fechar manualmente todas as abas e seguir usando o SSMS mantém
+            // a última sessão restaurável (restaurar uma aba a mais > perder tudo).
+            if (!ShouldWriteIndex(entries.Count)) return;
+
+            // Remove tab-*.sql órfãos (docs fechados / numeração encolhida) —
+            // só quando há entradas, para não apagar a sessão salva no teardown.
             try
             {
                 var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -266,8 +274,8 @@ namespace SqlBeaver.Session
             }
             catch { /* best-effort */ }
 
-            // Índice por último, atômico (tmp + Replace) — SEMPRE reescrito com o
-            // conjunto atual, mesmo vazio (docs fechados não são restaurados depois).
+            // Índice por último, atômico (tmp + Replace) — reescrito apenas com
+            // conjunto não-vazio (ver guarda acima).
             string json = SessionIndex.Serialize(entries);
             string tmp  = IndexPath + ".tmp";
             File.WriteAllText(tmp, json, Encoding.UTF8);
@@ -280,6 +288,13 @@ namespace SqlBeaver.Session
                 File.Move(tmp, IndexPath);
             }
         }
+
+        /// <summary>
+        /// Retorna true se o índice deve ser (re)escrito. Exposto como internal
+        /// para testes unitários puros: um conjunto vazio não deve sobrescrever
+        /// a sessão salva (guarda contra o teardown do SSMS).
+        /// </summary>
+        internal static bool ShouldWriteIndex(int entryCount) => entryCount > 0;
 
         // ---------------------------------------------------------------
         // Startup — reabrir as abas da última sessão
