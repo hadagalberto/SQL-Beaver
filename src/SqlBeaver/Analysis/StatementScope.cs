@@ -26,6 +26,31 @@ namespace SqlBeaver.Analysis
     /// </summary>
     public static class StatementScopeAnalyzer
     {
+        /// <summary>Keywords que iniciam um statement implícito em depth 0 (T-SQL não exige ';').
+        /// SET fica fora (UPDATE t SET quebraria); BEGIN/IF/WHILE fora (blocos não resetam escopo).</summary>
+        private static readonly HashSet<string> StatementStarters = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "WITH", "DECLARE", "EXEC", "EXECUTE",
+            "CREATE", "ALTER", "DROP", "TRUNCATE", "RETURN", "PRINT", "USE",
+        };
+
+        /// <summary>DMLs que podem ser absorvidos por um INSERT/WITH anterior (INSERT…SELECT; WITH cte AS (…) DML).</summary>
+        private static readonly HashSet<string> DmlStarters = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "SELECT", "UPDATE", "INSERT", "DELETE", "MERGE",
+        };
+
+        private static readonly HashSet<string> AbsorbingStarters = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "INSERT", "WITH",
+        };
+
+        /// <summary>Última palavra antes de SELECT que indica query composta (não inicia novo statement).</summary>
+        private static readonly HashSet<string> CompoundConnectors = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "UNION", "ALL", "EXCEPT", "INTERSECT",
+        };
+
         public static IReadOnlyList<TableRef> GetTablesInScope(string text, int caretPosition)
         {
             if (string.IsNullOrEmpty(text) || caretPosition < 0 || caretPosition > text.Length)
@@ -34,6 +59,9 @@ namespace SqlBeaver.Analysis
             var current = new List<TableRef>();
             int statementStart = 0;
             int parenDepth = 0;
+            string statementStarter = null; // primeira starter-keyword do statement atual
+            bool absorbedDml = false;       // INSERT…SELECT / WITH…DML já absorvido?
+            string lastWord = null;         // último identificador em depth 0 (regra do UNION)
             bool inLineComment = false, inString = false, inQuotedIdent = false;
             int blockCommentDepth = 0;
 
@@ -68,6 +96,9 @@ namespace SqlBeaver.Analysis
                     current = new List<TableRef>();
                     statementStart = i + 1;
                     parenDepth = 0;
+                    statementStarter = null;
+                    absorbedDml = false;
+                    lastWord = null;
                     i++;
                     continue;
                 }
@@ -84,13 +115,51 @@ namespace SqlBeaver.Analysis
                             return current;
                         current = new List<TableRef>();
                         statementStart = i;
+                        statementStarter = null;
+                        absorbedDml = false;
+                        lastWord = null;
                         continue;
                     }
+
+                    // ---- divisão implícita de statements (T-SQL não exige ';') ----
+                    if (parenDepth == 0 && StatementStarters.Contains(token))
+                    {
+                        if (statementStarter == null)
+                        {
+                            // primeira keyword do statement atual: ela o inicia, não divide
+                            statementStarter = token;
+                        }
+                        else if (string.Equals(token, "SELECT", StringComparison.OrdinalIgnoreCase) &&
+                                 lastWord != null && CompoundConnectors.Contains(lastWord))
+                        {
+                            // UNION [ALL] / EXCEPT / INTERSECT: query composta, mesmo statement
+                        }
+                        else if (DmlStarters.Contains(token) && AbsorbingStarters.Contains(statementStarter) && !absorbedDml)
+                        {
+                            // INSERT…SELECT; WITH cte AS (…) <DML>
+                            absorbedDml = true;
+                        }
+                        else
+                        {
+                            // novo statement implícito: caret EM tokenStart pertence ao novo
+                            if (caretPosition >= statementStart && caretPosition < tokenStart)
+                                return current;
+                            current = new List<TableRef>();
+                            statementStart = tokenStart;
+                            statementStarter = token;
+                            absorbedDml = false;
+                            // segue para o tratamento FROM/JOIN/UPDATE deste mesmo token
+                        }
+                    }
+
+                    if (parenDepth == 0)
+                        lastWord = token;
 
                     if (parenDepth == 0 &&
                         (string.Equals(token, "FROM", StringComparison.OrdinalIgnoreCase) ||
                          string.Equals(token, "JOIN", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(token, "UPDATE", StringComparison.OrdinalIgnoreCase)))
+                         string.Equals(token, "UPDATE", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(token, "INTO", StringComparison.OrdinalIgnoreCase)))
                     {
                         bool allowCommaList = string.Equals(token, "FROM", StringComparison.OrdinalIgnoreCase);
                         do

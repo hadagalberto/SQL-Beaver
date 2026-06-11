@@ -144,5 +144,70 @@ namespace SqlBeaver.Tests
             // "p" (alvo) não resolve para tabela conhecida; o FROM traz a tabela real
             Assert.Contains(refs, r => r.Table == "Pessoas" && r.Alias == "p");
         }
+
+        // ---- divisão implícita de statements (sem ';'/GO) ----
+
+        [Fact]
+        public void TwoSelectsWithoutSemicolon_CaretInSecond_OnlySecondScope()
+        {
+            string text = "SELECT * FROM Cadastro.Pessoas p WHERE p.Nome = 'x'\r\n\r\nSELECT * FROM Cadastro.Pessoas ps WHERE ";
+            var refs = Scope(text);
+            var r = Assert.Single(refs);
+            Assert.Equal("ps", r.Alias);
+        }
+
+        [Fact]
+        public void TwoSelectsWithoutSemicolon_CaretInFirst_OnlyFirstScope()
+        {
+            string text = "SELECT * FROM A a WHERE \r\nSELECT * FROM B b";
+            var refs = StatementScopeAnalyzer.GetTablesInScope(text, 24); // dentro do primeiro
+            var r = Assert.Single(refs);
+            Assert.Equal("a", r.Alias);
+        }
+
+        [Fact]
+        public void UnionSelect_IsOneStatement()
+        {
+            var refs = Scope("SELECT x FROM A a UNION SELECT y FROM B b WHERE ");
+            Assert.Equal(2, refs.Count);
+        }
+
+        [Fact]
+        public void UnionAllSelect_IsOneStatement()
+        {
+            var refs = Scope("SELECT x FROM A a UNION ALL SELECT y FROM B b WHERE ");
+            Assert.Equal(2, refs.Count);
+        }
+
+        [Fact]
+        public void InsertSelect_IsOneStatement()
+        {
+            var refs = Scope("INSERT INTO Destino SELECT x FROM Origem o WHERE ");
+            Assert.Equal(2, refs.Count); // Destino (INTO) + Origem
+        }
+
+        [Fact]
+        public void CteWithSelect_IsOneStatement()
+        {
+            var refs = Scope("WITH cte AS (SELECT 1 AS um) SELECT * FROM Cadastro.Pessoas p WHERE ");
+            var r = Assert.Single(refs);
+            Assert.Equal("p", r.Alias);
+        }
+
+        [Fact]
+        public void DeclareThenSelect_SplitsStatements()
+        {
+            var refs = Scope("DECLARE @x int\r\nSELECT * FROM Cadastro.Pessoas ps WHERE ");
+            var r = Assert.Single(refs);
+            Assert.Equal("ps", r.Alias);
+        }
+
+        [Fact]
+        public void SelectThenUpdate_UpdateCapturesItsTarget()
+        {
+            var refs = Scope("SELECT * FROM A a\r\nUPDATE Cadastro.Pessoas SET Nome = 'x' WHERE ");
+            var r = Assert.Single(refs);
+            Assert.Equal("Pessoas", r.Table);
+        }
     }
 }
