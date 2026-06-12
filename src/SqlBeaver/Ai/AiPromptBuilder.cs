@@ -75,7 +75,8 @@ namespace SqlBeaver.Ai
 
             var sb = new StringBuilder();
             sb.Append(body);
-            sb.Append("\n\nSchema disponível:\n");
+            sb.Append("\n\nSchema do banco (use SOMENTE estas tabelas e colunas — não invente nomes; ");
+            sb.Append("os nomes de tabela já vêm qualificados com o schema, ex.: Cadastro.Pessoas):\n");
             sb.Append(schemaContext.Trim());
             return sb.ToString();
         }

@@ -103,5 +103,65 @@ namespace SqlBeaver.Tests
             string text = AiSchemaContext.Render(scope, md, AiSchemaScope.Scope);
             Assert.StartsWith("Tabela: Cadastro.Pessoas", text);
         }
+
+        // ── RenderForGenerate (geração por comentário) ──────────────────────────
+
+        [Fact]
+        public void ForGenerate_None_ReturnsEmpty()
+        {
+            DbMetadata md = BuildMetadata();
+            Assert.Equal("", AiSchemaContext.RenderForGenerate("listar pessoas", null, md, AiSchemaScope.None));
+        }
+
+        [Fact]
+        public void ForGenerate_EmptyScope_MatchesCommentKeywords_WithColumns()
+        {
+            DbMetadata md = BuildMetadata();
+            // Comentário casa "pessoas" → detalha Cadastro.Pessoas com colunas; Financeiro.Titulos vira catálogo.
+            string text = AiSchemaContext.RenderForGenerate(
+                "listar o nome de todas as pessoas", null, md, AiSchemaScope.Scope);
+
+            Assert.Contains("Tabelas relevantes (com colunas):", text);
+            Assert.Contains("Tabela: Cadastro.Pessoas (IdPessoa int PK, Nome varchar(250))", text);
+            Assert.Contains("Outras tabelas do banco", text);
+            Assert.Contains("- Financeiro.Titulos", text);
+        }
+
+        [Fact]
+        public void ForGenerate_AccentInsensitive_PluralPrefix()
+        {
+            var tables = new List<TableEntry>
+            {
+                new TableEntry("Financeiro", "Debitos"),
+                new TableEntry("Financeiro", "Pagamentos"),
+            };
+            var schemas = new List<string> { "Financeiro" };
+            DbMetadata md = MetadataAssembler.Assemble(tables, schemas,
+                new List<MetadataAssembler.ColumnRow>(),
+                new List<MetadataAssembler.ForeignKeyColumnRow>());
+
+            // "débito" (com acento) casa "Debitos"; "pagaram" casa "Pagamentos" pelo prefixo "paga".
+            string text = AiSchemaContext.RenderForGenerate(
+                "pessoas que pagaram um débito", null, md, AiSchemaScope.Scope);
+
+            Assert.Contains("Tabela: Financeiro.Debitos", text);
+            Assert.Contains("Tabela: Financeiro.Pagamentos", text);
+        }
+
+        [Fact]
+        public void Keywords_StripsAccents_DropsShortWords()
+        {
+            List<string> kw = AiSchemaContext.Keywords("listar o cpf de um débito no dia 01");
+            Assert.Contains("listar", kw);
+            Assert.Contains("debito", kw);  // sem acento
+            Assert.DoesNotContain("de", kw); // < 4 chars
+            Assert.DoesNotContain("um", kw);
+        }
+
+        [Fact]
+        public void StripAccents_RemovesDiacritics()
+        {
+            Assert.Equal("debito accao", AiSchemaContext.StripAccents("débito accão"));
+        }
     }
 }

@@ -487,7 +487,7 @@ namespace SqlBeaver.Commands
                     return;
                 }
 
-                string schemaContext = BuildSchemaContext(dte, text, caretOffset);
+                string schemaContext = BuildGenerateSchemaContext(dte, comment, text, caretOffset);
                 Ai.AiPrompt prompt = Ai.AiPromptBuilder.BuildGenerateFromComment(comment, schemaContext);
 
                 RunAiAsync(prompt, generated =>
@@ -752,6 +752,31 @@ namespace SqlBeaver.Commands
             catch (Exception ex)
             {
                 Log.Error("BuildSchemaContext", ex);
+                return string.Empty;
+            }
+        }
+
+        /// <summary>Contexto de schema para a GERAÇÃO por comentário: ancora a IA nas tabelas reais
+        /// (relevantes ao comentário, com colunas) + catálogo de nomes qualificados do banco.</summary>
+        private static string BuildGenerateSchemaContext(DTE2 dte, string comment, string text, int caretOffset)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                Ai.AiConfig cfg = Ai.AiConfigStore.Load();
+                Ai.AiSchemaScope level = Ai.AiConfigResolver.NormalizeScope(cfg.SchemaScope);
+                if (level == Ai.AiSchemaScope.None) return string.Empty;
+
+                Metadata.DbMetadata metadata = GetMetadataForCommands(dte);
+                if (metadata == null) return string.Empty;
+
+                System.Collections.Generic.IReadOnlyList<Analysis.TableRef> scope =
+                    Analysis.StatementScopeAnalyzer.GetTablesInScope(text, caretOffset);
+                return Ai.AiSchemaContext.RenderForGenerate(comment, scope, metadata, level);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("BuildGenerateSchemaContext", ex);
                 return string.Empty;
             }
         }
