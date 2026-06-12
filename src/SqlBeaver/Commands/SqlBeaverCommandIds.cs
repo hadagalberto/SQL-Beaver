@@ -22,5 +22,9 @@ namespace SqlBeaver.Commands
         public const int ManageSnippets       = 0x010B;
         public const int SummarizeScript      = 0x010C;
         public const int ManageFormatStyles  = 0x010D;
+        public const int AiSettings              = 0x010E;
+        public const int AiGenerateFromComment   = 0x010F;
+        public const int AiExplain               = 0x0110;
+        public const int AiOptimize              = 0x0111;
     }
 }

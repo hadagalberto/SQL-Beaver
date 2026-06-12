@@ -441,6 +441,314 @@ namespace SqlBeaver.Commands
         }
 
         // ---------------------------------------------------------------
+        // IA (opcional)
+        // ---------------------------------------------------------------
+
+        public static void AiSettings()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                IntPtr hwnd;
+                try { hwnd = new IntPtr((int)dte.MainWindow.HWnd); }
+                catch { hwnd = IntPtr.Zero; }
+                var owner = new NativeWindowWrapper(hwnd);
+                Ai.AiSettingsDialog.ShowSettings(owner);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("IA (configuração)", ex);
+                ShowStatus("falha ao abrir configuração de IA — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void AiGenerateFromComment()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                if (!Ai.AiConfigStore.IsConfigured())
+                { ShowStatus("configure a IA em Tools > SQL Beaver > IA (configuração)…"); return; }
+
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus("IA: nenhum documento ativo."); return; }
+
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                TextSelection sel = doc.Selection;
+                int caretOffset = doc.StartPoint.CreateEditPoint().GetText(sel.ActivePoint).Length;
+
+                int commentEndLine;
+                string comment = ExtractComment(doc, sel, out commentEndLine);
+                if (string.IsNullOrWhiteSpace(comment))
+                {
+                    ShowStatus("posicione o cursor numa linha de comentário descrevendo o que gerar.");
+                    return;
+                }
+
+                string schemaContext = BuildSchemaContext(dte, text, caretOffset);
+                Ai.AiPrompt prompt = Ai.AiPromptBuilder.BuildGenerateFromComment(comment, schemaContext);
+
+                RunAiAsync(prompt, generated =>
+                {
+                    string sql = Ai.ResponseSqlCleaner.Clean(generated);
+                    if (string.IsNullOrEmpty(sql)) { ShowStatus("IA: resposta vazia."); return; }
+
+                    // Insere o SQL numa nova linha logo após a última linha do comentário.
+                    EditPoint ep = doc.StartPoint.CreateEditPoint();
+                    int lastLine = doc.EndPoint.Line;
+                    int targetLine = commentEndLine < lastLine ? commentEndLine : lastLine;
+                    ep.MoveToLineAndOffset(targetLine, 1);
+                    ep.EndOfLine();
+
+                    dte.UndoContext.Open("SQL Beaver IA: gerar SQL");
+                    try { ep.Insert("\r\n" + sql); }
+                    finally { dte.UndoContext.Close(); }
+
+                    ShowStatus("SQL gerado pela IA inserido.");
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Error("IA: gerar SQL de comentário", ex);
+                ShowStatus("falha em IA: gerar SQL — veja Output > SQL Beaver");
+            }
+        }
+
+        public static void AiExplain()
+        {
+            RunAiOnStatement("IA: explicar SQL", "SQL Beaver IA — Explicação",
+                (sql, schema) => Ai.AiPromptBuilder.BuildExplain(sql, schema));
+        }
+
+        public static void AiOptimize()
+        {
+            RunAiOnStatement("IA: otimizar SQL", "SQL Beaver IA — Otimização",
+                (sql, schema) => Ai.AiPromptBuilder.BuildOptimize(sql, schema));
+        }
+
+        private static void RunAiOnStatement(string opName, string heading,
+            Func<string, string, Ai.AiPrompt> build)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                if (!Ai.AiConfigStore.IsConfigured())
+                { ShowStatus("configure a IA em Tools > SQL Beaver > IA (configuração)…"); return; }
+
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) { ShowStatus("IA: nenhum documento ativo."); return; }
+
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                TextSelection sel = doc.Selection;
+                int caretOffset = doc.StartPoint.CreateEditPoint().GetText(sel.ActivePoint).Length;
+
+                string sql;
+                if (!sel.IsEmpty && !string.IsNullOrWhiteSpace(sel.Text))
+                {
+                    sql = sel.Text;
+                }
+                else
+                {
+                    StatementBounds bounds = StatementScopeAnalyzer.GetStatementBoundsAt(text, caretOffset);
+                    if (bounds.Length == 0) { ShowStatus("IA: nenhum statement sob o cursor."); return; }
+                    sql = text.Substring(bounds.Start, bounds.Length);
+                }
+
+                if (string.IsNullOrWhiteSpace(sql)) { ShowStatus("IA: nada para analisar."); return; }
+
+                string schemaContext = BuildSchemaContext(dte, text, caretOffset);
+                Ai.AiPrompt prompt = build(sql, schemaContext);
+                string originalSql = sql;
+
+                RunAiAsync(prompt, answer =>
+                {
+                    string body = answer == null ? "" : answer.Trim();
+                    string content =
+                        "/*\r\n" + heading + "\r\n\r\n" + body + "\r\n*/\r\n\r\n" + originalSql.Trim() + "\r\n";
+                    Navigation.DefinitionService.OpenNewQueryWindow(content);
+                    ShowStatus("resultado da IA aberto em nova janela.");
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Error(opName, ex);
+                ShowStatus("falha em " + opName + " — veja Output > SQL Beaver");
+            }
+        }
+
+        /// <summary>
+        /// Executa o prompt no provedor ativo em background (timeout ~60s) e aplica
+        /// <paramref name="apply"/> na UI thread em caso de sucesso. Erros viram status.
+        /// </summary>
+        private static void RunAiAsync(Ai.AiPrompt prompt, Action<string> apply)
+        {
+            Ai.AiConfig cfg = Ai.AiConfigStore.Load();
+            Ai.IAiProvider provider = Ai.AiProviders.ById(cfg.Provider);
+            string model = string.IsNullOrWhiteSpace(cfg.Model) ? provider.DefaultModel : cfg.Model;
+            string apiKey = Ai.AiConfigStore.GetApiKey();
+            int maxTokens = 1500;
+
+            ShowStatus("consultando a IA…");
+
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                Ai.AiResult result;
+                try
+                {
+                    using (var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(60)))
+                    {
+                        var req = new Ai.AiRequest
+                        {
+                            System    = prompt.System,
+                            User      = prompt.User,
+                            MaxTokens = maxTokens,
+                        };
+                        result = await System.Threading.Tasks.Task.Run(
+                            () => provider.CompleteAsync(req, model, apiKey, cts.Token), cts.Token);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    result = Ai.AiResult.Fail("tempo esgotado ao consultar a IA.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("RunAiAsync", ex);
+                    result = Ai.AiResult.Fail("falha ao consultar a IA.");
+                }
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                try
+                {
+                    if (result == null || !result.Ok)
+                    {
+                        ShowStatus("IA: " + (result?.Error ?? "falha desconhecida."));
+                        return;
+                    }
+                    apply(result.Text ?? string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("RunAiAsync: aplicar resultado", ex);
+                    ShowStatus("falha ao aplicar resultado da IA — veja Output > SQL Beaver");
+                }
+            });
+        }
+
+        /// <summary>
+        /// Lê o comentário a usar para gerar SQL: a linha do caret se for comentário,
+        /// senão as linhas de comentário contíguas imediatamente acima do caret,
+        /// senão a seleção se for comentário. <paramref name="commentEndLine"/> recebe
+        /// a última linha (1-based) do comentário, onde o SQL será inserido logo abaixo.
+        /// </summary>
+        private static string ExtractComment(TextDocument doc, TextSelection sel, out int commentEndLine)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            commentEndLine = sel.ActivePoint.Line;
+
+            // 1) Seleção que é comentário.
+            if (!sel.IsEmpty)
+            {
+                string selText = sel.Text;
+                if (IsCommentText(selText))
+                {
+                    commentEndLine = Math.Max(sel.TopPoint.Line, sel.BottomPoint.Line);
+                    return selText;
+                }
+            }
+
+            int caretLine = sel.ActivePoint.Line;
+            string lineText = GetLineText(doc, caretLine);
+
+            // 2) Linha do caret é comentário → junta as linhas de comentário contíguas acima.
+            if (IsCommentLine(lineText))
+            {
+                int top = caretLine;
+                while (top - 1 >= 1 && IsCommentLine(GetLineText(doc, top - 1)))
+                    top--;
+
+                var sb = new System.Text.StringBuilder();
+                for (int l = top; l <= caretLine; l++)
+                {
+                    if (l > top) sb.Append("\r\n");
+                    sb.Append(GetLineText(doc, l));
+                }
+                commentEndLine = caretLine;
+                return sb.ToString();
+            }
+
+            // 3) Linha do caret não é comentário → procura comentário contíguo logo acima.
+            if (caretLine - 1 >= 1 && IsCommentLine(GetLineText(doc, caretLine - 1)))
+            {
+                int bottom = caretLine - 1;
+                int top = bottom;
+                while (top - 1 >= 1 && IsCommentLine(GetLineText(doc, top - 1)))
+                    top--;
+
+                var sb = new System.Text.StringBuilder();
+                for (int l = top; l <= bottom; l++)
+                {
+                    if (l > top) sb.Append("\r\n");
+                    sb.Append(GetLineText(doc, l));
+                }
+                commentEndLine = bottom;
+                return sb.ToString();
+            }
+
+            return null;
+        }
+
+        private static string GetLineText(TextDocument doc, int line)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            EditPoint ep = doc.StartPoint.CreateEditPoint();
+            ep.MoveToLineAndOffset(line, 1);
+            EditPoint end = ep.CreateEditPoint();
+            end.EndOfLine();
+            return ep.GetText(end);
+        }
+
+        private static bool IsCommentLine(string line)
+        {
+            if (line == null) return false;
+            string t = line.Trim();
+            return t.StartsWith("--") || t.StartsWith("/*") || t.StartsWith("*");
+        }
+
+        private static bool IsCommentText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            string t = text.TrimStart();
+            return t.StartsWith("--") || t.StartsWith("/*");
+        }
+
+        private static string BuildSchemaContext(DTE2 dte, string text, int caretOffset)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                Ai.AiConfig cfg = Ai.AiConfigStore.Load();
+                Ai.AiSchemaScope level = Ai.AiConfigResolver.NormalizeScope(cfg.SchemaScope);
+                if (level == Ai.AiSchemaScope.None) return string.Empty;
+
+                Metadata.DbMetadata metadata = GetMetadataForCommands(dte);
+                if (metadata == null) return string.Empty;
+
+                System.Collections.Generic.IReadOnlyList<Analysis.TableRef> scope =
+                    Analysis.StatementScopeAnalyzer.GetTablesInScope(text, caretOffset);
+                return Ai.AiSchemaContext.Render(scope, metadata, level);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("BuildSchemaContext", ex);
+                return string.Empty;
+            }
+        }
+
+        // ---------------------------------------------------------------
         // Shared helpers
         // ---------------------------------------------------------------
 

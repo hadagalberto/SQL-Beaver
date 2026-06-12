@@ -50,6 +50,10 @@ namespace SqlBeaver
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.ManageSnippets,       () => Commands.EditorCommands.ManageSnippets());
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.SummarizeScript,      () => Commands.EditorCommands.SummarizeScript());
                 AddCommand(menuService, Commands.SqlBeaverCommandIds.ManageFormatStyles,  () => Commands.EditorCommands.ManageFormatStyles());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.AiSettings,            () => Commands.EditorCommands.AiSettings());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.AiGenerateFromComment, () => Commands.EditorCommands.AiGenerateFromComment());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.AiExplain,             () => Commands.EditorCommands.AiExplain());
+                AddCommand(menuService, Commands.SqlBeaverCommandIds.AiOptimize,            () => Commands.EditorCommands.AiOptimize());
                 Log.Info("Comandos nomeados registrados (menu Tools > SQL Beaver, toolbar e atalhos).");
             }
             else

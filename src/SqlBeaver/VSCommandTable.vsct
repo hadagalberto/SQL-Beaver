@@ -84,6 +84,22 @@
         <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
         <Strings><ButtonText>Gerenciar estilos de formatação…</ButtonText></Strings>
       </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidAiSettings" priority="0x010E" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>IA (configuração)…</ButtonText></Strings>
+      </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidAiGenerateFromComment" priority="0x010F" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>IA: gerar SQL de comentário</ButtonText></Strings>
+      </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidAiExplain" priority="0x0110" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>IA: explicar SQL</ButtonText></Strings>
+      </Button>
+      <Button guid="guidSqlBeaverCmdSet" id="cmdidAiOptimize" priority="0x0111" type="Button">
+        <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverMenuGroup" />
+        <Strings><ButtonText>IA: otimizar SQL</ButtonText></Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -130,6 +146,18 @@
     <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidManageFormatStyles" priority="0x010D">
       <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
     </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidAiSettings" priority="0x010E">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidAiGenerateFromComment" priority="0x010F">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidAiExplain" priority="0x0110">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
+    <CommandPlacement guid="guidSqlBeaverCmdSet" id="cmdidAiOptimize" priority="0x0111">
+      <Parent guid="guidSqlBeaverCmdSet" id="SqlBeaverToolbarGroup" />
+    </CommandPlacement>
   </CommandPlacements>
 
   <KeyBindings>
@@ -137,6 +165,7 @@
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidFindObject" editor="guidVSStd97" key1="K" mod1="Control" key2="O" mod2="Control" />
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidGoToDefinition" editor="guidVSStd97" key1="K" mod1="Control" key2="G" mod2="Control" />
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidRunCurrentStatement" editor="guidVSStd97" key1="VK_F5" mod1="Control Shift" />
+    <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidAiGenerateFromComment" editor="guidVSStd97" key1="K" mod1="Control" key2="I" mod2="Control" />
   </KeyBindings>
 
   <Symbols>
@@ -161,6 +190,10 @@
       <IDSymbol name="cmdidManageSnippets"       value="0x010B" />
       <IDSymbol name="cmdidSummarizeScript"      value="0x010C" />
       <IDSymbol name="cmdidManageFormatStyles"   value="0x010D" />
+      <IDSymbol name="cmdidAiSettings"            value="0x010E" />
+      <IDSymbol name="cmdidAiGenerateFromComment" value="0x010F" />
+      <IDSymbol name="cmdidAiExplain"             value="0x0110" />
+      <IDSymbol name="cmdidAiOptimize"            value="0x0111" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>

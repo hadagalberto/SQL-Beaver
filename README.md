@@ -234,6 +234,37 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
   por statement de topo (SELECT, INSERT, UPDATE, CREATE PROCEDURE, IF, EXEC…).
   Duplo-clique / **Ir para** navega o editor até a linha do statement.
 
+## IA (opcional)
+
+Recursos de IA sob demanda (nunca no caminho da tecla — só por comando explícito).
+Você escolhe o provedor e fornece a sua própria chave de API.
+
+**Configuração:** `Tools > SQL Beaver > IA (configuração)…`
+
+- **Provedores:** Anthropic (Claude), OpenAI e Google Gemini. Escolha o provedor,
+  ajuste o modelo (já vem o default de cada um) e cole a sua chave de API.
+- **Chave de API:** guardada **criptografada com DPAPI** em
+  `%LOCALAPPDATA%\SqlBeaver\ai.json` — só o seu usuário Windows nesta máquina a
+  descriptografa, nunca fica em texto puro no disco. Se uma chave já estiver salva,
+  deixe o campo em branco para mantê-la.
+- **Testar conexão:** valida provedor + modelo + chave com uma chamada trivial.
+- **Contexto de schema:** escolha o que vai junto do seu SQL — *Tabelas no escopo*
+  (default), *Nenhum* ou *Banco todo*.
+
+**Comandos** (Tools > SQL Beaver ou clique direito no editor):
+
+- **IA: gerar SQL de comentário** (atalho **Ctrl+K, Ctrl+I**) — posicione o cursor
+  numa linha de comentário (`--` ou `/* */`) descrevendo o que você quer; o SQL
+  gerado é inserido logo abaixo do comentário (uma única edição/undo).
+- **IA: explicar SQL** — explica o statement atual (ou a seleção) em PT-BR; abre o
+  resultado em nova janela.
+- **IA: otimizar SQL** — analisa desempenho e propõe uma versão melhorada; abre o
+  resultado em nova janela.
+
+> 🔒 **Privacidade:** ao usar esses comandos, o seu SQL e o schema do contexto
+> selecionado são enviados ao provedor de IA escolhido. Nenhum dado é enviado sem
+> que você acione um comando.
+
 ## Instalação
 
 > ⚠️ **Passo obrigatório:** desative o IntelliSense nativo do SSMS. O SQL Beaver o
