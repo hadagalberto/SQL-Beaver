@@ -392,7 +392,8 @@ namespace SqlBeaver.Session
                         string content = File.ReadAllText(entry.File, Encoding.UTF8);
                         if (string.IsNullOrEmpty(content)) continue;
 
-                        Navigation.DefinitionService.OpenNewQueryWindow(content);
+                        // Desconectado: a aba reabre sem disparar o diálogo "Conectar ao servidor".
+                        Navigation.DefinitionService.OpenDisconnectedQueryWindow(content);
                         restored++;
                     }
                     catch (Exception entryEx)

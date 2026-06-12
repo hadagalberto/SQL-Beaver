@@ -297,7 +297,19 @@ namespace SqlBeaver.Navigation
                 Log.Info("OpenNewQueryWindow: ScriptFactory falhou (" + ex.Message + "), usando fallback de arquivo temp.");
             }
 
-            // Fallback: temp file
+            // Fallback: arquivo temp (abre DESCONECTADO, sem prompt de conexão).
+            OpenDisconnectedQueryWindow(content);
+        }
+
+        /// <summary>
+        /// Abre o conteúdo numa janela de query SEM pedir conexão — grava um .sql temporário e o
+        /// abre como documento (igual File > Open). Usado na restauração de sessão para que o SSMS
+        /// não dispare o diálogo "Conectar ao servidor" de cada aba reaberta; o usuário conecta
+        /// manualmente se quiser (ao executar, o SSMS pergunta a conexão normalmente).
+        /// </summary>
+        internal static void OpenDisconnectedQueryWindow(string content)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
             try
             {
                 string path = System.IO.Path.Combine(
@@ -306,11 +318,11 @@ namespace SqlBeaver.Navigation
                 System.IO.File.WriteAllText(path, content, System.Text.Encoding.UTF8);
                 var dte2 = Package.GetGlobalService(typeof(DTE)) as DTE2;
                 dte2?.ItemOperations?.OpenFile(path);
-                Log.Info("OpenNewQueryWindow: aberto via arquivo temp: " + path);
+                Log.Info("OpenDisconnectedQueryWindow: aberto via arquivo temp (sem conexão): " + path);
             }
             catch (Exception ex2)
             {
-                Log.Error("OpenNewQueryWindow: fallback também falhou", ex2);
+                Log.Error("OpenDisconnectedQueryWindow: falhou", ex2);
                 ShowStatus("Não foi possível abrir nova janela — veja Output > SQL Beaver");
             }
         }
