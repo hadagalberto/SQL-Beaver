@@ -103,6 +103,23 @@ namespace SqlBeaver.Tests
                 GeminiProvider.ExtractText("{\"candidates\":[]}"));
         }
 
+        [Fact]
+        public void Gemini_ExtractText_SkipsThoughtParts()
+        {
+            // Modelo "thinking": a 1ª parte é raciocínio (thought=true) e deve ser ignorada.
+            string sample =
+                "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[" +
+                "{\"text\":\"Vou pensar... talvez a tabela X\",\"thought\":true}," +
+                "{\"text\":\"SELECT 9\"}]}}]}";
+            Assert.Equal("SELECT 9", GeminiProvider.ExtractText(sample));
+        }
+
+        [Fact]
+        public void Gemini_DefaultModel_IsFlash35()
+        {
+            Assert.Equal("gemini-3.5-flash", new GeminiProvider().DefaultModel);
+        }
+
         // ── Registro ──────────────────────────────────────────────────────────
 
         [Fact]

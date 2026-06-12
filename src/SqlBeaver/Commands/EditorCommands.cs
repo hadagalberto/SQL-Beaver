@@ -494,6 +494,12 @@ namespace SqlBeaver.Commands
                 {
                     string sql = Ai.ResponseSqlCleaner.Clean(generated);
                     if (string.IsNullOrEmpty(sql)) { ShowStatus("IA: resposta vazia."); return; }
+                    if (!Ai.ResponseSqlCleaner.LooksLikeSql(sql))
+                    {
+                        ShowStatus("IA não retornou um script SQL — detalhe melhor o comentário e tente de novo.");
+                        Log.Info("IA gerar SQL: resposta não reconhecida como SQL: " + sql);
+                        return;
+                    }
 
                     // Insere o SQL numa nova linha logo após a última linha do comentário.
                     EditPoint ep = doc.StartPoint.CreateEditPoint();
@@ -589,7 +595,9 @@ namespace SqlBeaver.Commands
             Ai.IAiProvider provider = Ai.AiProviders.ById(cfg.Provider);
             string model = string.IsNullOrWhiteSpace(cfg.Model) ? provider.DefaultModel : cfg.Model;
             string apiKey = Ai.AiConfigStore.GetApiKey();
-            int maxTokens = 1500;
+            // Folgado o bastante para modelos "thinking" (ex.: gemini-*-flash), em que o
+            // raciocínio consome parte do orçamento antes da resposta final.
+            int maxTokens = 4096;
 
             ShowStatus("consultando a IA…");
 

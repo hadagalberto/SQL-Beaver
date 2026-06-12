@@ -16,10 +16,15 @@ namespace SqlBeaver.Ai
     public static class AiPromptBuilder
     {
         private const string GenerateSystem =
-            "Você é um especialista em T-SQL (Microsoft SQL Server). " +
-            "Gere SOMENTE SQL válido para SQL Server a partir da descrição do usuário. " +
-            "Responda apenas com o SQL — sem explicações, sem comentários, " +
-            "e sem cercas de código (não use ```sql nem ```).";
+            "Você é um especialista em T-SQL (Microsoft SQL Server). A partir da descrição do usuário, " +
+            "produza UM script T-SQL pronto para executar. REGRAS OBRIGATÓRIAS: " +
+            "(1) responda APENAS com o script SQL; " +
+            "(2) NÃO escreva explicações em prosa, NÃO faça perguntas, NÃO descreva seu raciocínio; " +
+            "(3) NÃO use cercas de código (nada de ```sql nem ```); " +
+            "(4) se algo for ambíguo, ASSUMA a interpretação mais provável e gere o script mesmo assim — " +
+            "se precisar registrar uma suposição, faça-o como comentário SQL ('-- ...') dentro do próprio script; " +
+            "(5) comece a resposta diretamente pela primeira palavra-chave SQL (SELECT, WITH, INSERT, etc.); " +
+            "(6) quando um schema for fornecido, use exclusivamente as tabelas e colunas existentes nele.";
 
         private const string ExplainSystem =
             "Você é um especialista em T-SQL (Microsoft SQL Server). " +

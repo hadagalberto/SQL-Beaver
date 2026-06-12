@@ -9,8 +9,9 @@ namespace SqlBeaver.Tests
         public void Generate_System_ForbidsCodeFences()
         {
             AiPrompt p = AiPromptBuilder.BuildGenerateFromComment("-- listar pessoas", "");
-            Assert.Contains("```sql", p.System);     // a instrução cita as cercas que devem ser evitadas
-            Assert.Contains("SOMENTE SQL", p.System);
+            Assert.Contains("```sql", p.System);        // a instrução cita as cercas que devem ser evitadas
+            Assert.Contains("APENAS", p.System);        // responda APENAS com o script SQL
+            Assert.Contains("NÃO faça perguntas", p.System); // proíbe prosa/perguntas
         }
 
         [Fact]

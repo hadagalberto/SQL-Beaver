@@ -12,7 +12,7 @@ namespace SqlBeaver.Ai
     {
         public string Id => "gemini";
         public string DisplayName => "Google (Gemini)";
-        public string DefaultModel => "gemini-1.5-pro";
+        public string DefaultModel => "gemini-3.5-flash";
 
         // ── Modelos DataContract ──────────────────────────────────────────────
 
@@ -35,6 +35,9 @@ namespace SqlBeaver.Ai
         public sealed class Part
         {
             [DataMember(Name = "text")] public string Text;
+            // Modelos "thinking" (gemini-*-flash 2.5/3.x) marcam o raciocínio com thought=true.
+            // Essas partes NÃO são a resposta — devem ser descartadas para não vazar prosa.
+            [DataMember(Name = "thought", EmitDefaultValue = false)] public bool Thought;
         }
 
         [DataContract(Namespace = "")]
@@ -79,7 +82,16 @@ namespace SqlBeaver.Ai
             {
                 Part[] parts = resp.Candidates[0].Content?.Parts;
                 if (parts != null && parts.Length > 0)
-                    text = parts[0].Text;
+                {
+                    // Concatena apenas as partes de resposta (ignora as de raciocínio thought=true).
+                    var sb = new StringBuilder();
+                    foreach (Part p in parts)
+                    {
+                        if (p == null || p.Thought || string.IsNullOrEmpty(p.Text)) continue;
+                        sb.Append(p.Text);
+                    }
+                    text = sb.ToString();
+                }
             }
             if (string.IsNullOrEmpty(text))
                 throw new InvalidOperationException("resposta da IA sem conteúdo de texto");
