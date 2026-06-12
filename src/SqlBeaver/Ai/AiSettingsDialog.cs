@@ -19,6 +19,7 @@ namespace SqlBeaver.Ai
         private readonly TextBox  _txtKey;
         private readonly Label    _lblKeyHint;
         private readonly ComboBox _cboScope;
+        private readonly CheckBox _chkAutoGen;
         private readonly Button   _btnTest;
         private readonly Label    _lblStatus;
         private readonly Button   _btnSave;
@@ -46,8 +47,8 @@ namespace SqlBeaver.Ai
         {
             Text            = "SQL Beaver — IA (configuração)";
             Width           = 560;
-            Height          = 430;
-            MinimumSize     = new Size(520, 400);
+            Height          = 466;
+            MinimumSize     = new Size(520, 436);
             StartPosition   = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox     = false;
@@ -115,6 +116,15 @@ namespace SqlBeaver.Ai
             _cboScope.Items.Add(new ScopeItem { Value = "none",  Display = "Nenhum" });
             _cboScope.Items.Add(new ScopeItem { Value = "all",   Display = "Banco todo" });
 
+            // ── Gerar com IA ao pressionar Enter ──────────────────────────────
+            _chkAutoGen = new CheckBox
+            {
+                Font     = font,
+                AutoSize = true,
+                Text     = "Gerar com IA ao pressionar Enter num comentário",
+            };
+            _chkAutoGen.SetBounds(150, 168, 380, 20);
+
             // ── Privacidade ───────────────────────────────────────────────────
             var lblPrivacy = new Label
             {
@@ -125,11 +135,11 @@ namespace SqlBeaver.Ai
                             "A chave é guardada criptografada (DPAPI) nesta máquina, só o seu " +
                             "usuário Windows a lê.",
             };
-            lblPrivacy.SetBounds(16, 172, 514, 50);
+            lblPrivacy.SetBounds(16, 200, 514, 50);
 
             // ── Testar conexão ────────────────────────────────────────────────
             _btnTest = new Button { Text = "Testar conexão", Font = font, FlatStyle = FlatStyle.System };
-            _btnTest.SetBounds(16, 228, 140, 30);
+            _btnTest.SetBounds(16, 256, 140, 30);
 
             _lblStatus = new Label
             {
@@ -137,17 +147,17 @@ namespace SqlBeaver.Ai
                 AutoSize = false,
                 Text     = "",
             };
-            _lblStatus.SetBounds(166, 228, 364, 56);
+            _lblStatus.SetBounds(166, 256, 364, 56);
 
             // ── Salvar / Cancelar ─────────────────────────────────────────────
             _btnSave = new Button { Text = "Salvar", Font = font, FlatStyle = FlatStyle.System,
                                     DialogResult = DialogResult.None };
-            _btnSave.SetBounds(354, 320, 80, 30);
+            _btnSave.SetBounds(354, 348, 80, 30);
             _btnSave.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
 
             _btnCancel = new Button { Text = "Cancelar", Font = font, FlatStyle = FlatStyle.System,
                                       DialogResult = DialogResult.Cancel };
-            _btnCancel.SetBounds(444, 320, 80, 30);
+            _btnCancel.SetBounds(444, 348, 80, 30);
             _btnCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
 
             CancelButton = _btnCancel;
@@ -158,6 +168,7 @@ namespace SqlBeaver.Ai
                 lblModel, _txtModel,
                 lblKey, _txtKey, _lblKeyHint,
                 lblScope, _cboScope,
+                _chkAutoGen,
                 lblPrivacy,
                 _btnTest, _lblStatus,
                 _btnSave, _btnCancel,
@@ -222,6 +233,9 @@ namespace SqlBeaver.Ai
                     { scopeIdx = i; break; }
                 }
                 _cboScope.SelectedIndex = scopeIdx;
+
+                // Gerar ao Enter: ligado por padrão (null/ausente → marcado).
+                _chkAutoGen.Checked = AiConfigResolver.AutoGenerateOnEnter(cfg);
             }
             catch (Exception ex)
             {
@@ -346,10 +360,11 @@ namespace SqlBeaver.Ai
                 AiConfig existing = AiConfigStore.Load();
                 var cfg = new AiConfig
                 {
-                    Provider     = providerId,
-                    Model        = model,
-                    SchemaScope  = scopeValue,
-                    KeyProtected = existing.KeyProtected,
+                    Provider            = providerId,
+                    Model               = model,
+                    SchemaScope         = scopeValue,
+                    KeyProtected        = existing.KeyProtected,
+                    AutoGenerateOnEnter = _chkAutoGen.Checked ? "true" : "false",
                 };
 
                 AiConfigStore.Save(cfg, keyToSave);

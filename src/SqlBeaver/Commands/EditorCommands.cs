@@ -463,6 +463,20 @@ namespace SqlBeaver.Commands
             }
         }
 
+        /// <summary>
+        /// Guarda de reentrância para a geração por IA: enquanto true, o handler de Enter
+        /// (e novos comandos) não devem disparar outra geração — evita empilhar chamadas
+        /// quando o usuário pressiona Enter repetidamente. volatile: lido/escrito de threads
+        /// diferentes (UI + JoinableTask).
+        /// </summary>
+        internal static volatile bool AiBusy;
+
+        /// <summary>
+        /// Gera SQL a partir do comentário sob/acima do caret. Captura comentário + conexão
+        /// na UI thread, ESPERA (com timeout) o cache de schema carregar fora da UI thread,
+        /// monta o schema TOON, chama a IA e insere o SQL logo abaixo do comentário.
+        /// Chamada pelo comando VSCT e pelo handler de Enter. Nunca lança no editor.
+        /// </summary>
         public static void AiGenerateFromComment()
         {
             try
@@ -471,13 +485,13 @@ namespace SqlBeaver.Commands
                 if (!Ai.AiConfigStore.IsConfigured())
                 { ShowStatus("configure a IA em Tools > SQL Beaver > IA (configuração)…"); return; }
 
+                if (AiBusy) { ShowStatus("IA: geração em andamento — aguarde."); return; }
+
                 var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
                 var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
                 if (doc == null) { ShowStatus("IA: nenhum documento ativo."); return; }
 
-                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
                 TextSelection sel = doc.Selection;
-                int caretOffset = doc.StartPoint.CreateEditPoint().GetText(sel.ActivePoint).Length;
 
                 int commentEndLine;
                 string comment = ExtractComment(doc, sel, out commentEndLine);
@@ -487,36 +501,73 @@ namespace SqlBeaver.Commands
                     return;
                 }
 
-                string schemaContext = BuildGenerateSchemaContext(dte, comment, text, caretOffset);
-                Ai.AiPrompt prompt = Ai.AiPromptBuilder.BuildGenerateFromComment(comment, schemaContext);
+                // Conexão capturada na UI thread (null quando não há janela conectada).
+                bool hasConn = TryGetConnectionInfo(out string server, out string database,
+                    out Metadata.MetadataRequest request);
 
-                RunAiAsync(prompt, generated =>
+                AiBusy = true;
+                ShowStatus("aguardando o schema do banco…");
+
+                _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                 {
-                    string sql = Ai.ResponseSqlCleaner.Clean(generated);
-                    if (string.IsNullOrEmpty(sql)) { ShowStatus("IA: resposta vazia."); return; }
-                    if (!Ai.ResponseSqlCleaner.LooksLikeSql(sql))
+                    try
                     {
-                        ShowStatus("IA não retornou um script SQL — detalhe melhor o comentário e tente de novo.");
-                        Log.Info("IA gerar SQL: resposta não reconhecida como SQL: " + sql);
-                        return;
+                        // Fora da UI thread: espera o cache carregar (TryGet dispara a carga
+                        // em background e devolve a metadata pronta nas chamadas seguintes).
+                        Metadata.DbMetadata md = hasConn
+                            ? await WaitMetadataAsync(server, database, request, 15000)
+                            : null;
+
+                        // EncodeFull é puro — schema COMPLETO para a geração (sem escopo ainda).
+                        string schema = md != null ? Ai.AiSchemaToon.EncodeFull(md) : "";
+                        Ai.AiPrompt prompt = Ai.AiPromptBuilder.BuildGenerateFromComment(comment, schema);
+
+                        ShowStatus("consultando a IA…");
+                        Ai.AiResult result = await CallAiAsync(prompt);
+
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        if (result == null || !result.Ok)
+                        {
+                            ShowStatus("IA: " + (result?.Error ?? "falha desconhecida."));
+                            return;
+                        }
+
+                        string sql = Ai.ResponseSqlCleaner.Clean(result.Text ?? string.Empty);
+                        if (string.IsNullOrEmpty(sql)) { ShowStatus("IA: resposta vazia."); return; }
+                        if (!Ai.ResponseSqlCleaner.LooksLikeSql(sql))
+                        {
+                            ShowStatus("IA não retornou um script SQL — detalhe melhor o comentário e tente de novo.");
+                            Log.Info("IA gerar SQL: resposta não reconhecida como SQL: " + sql);
+                            return;
+                        }
+
+                        // Insere o SQL numa nova linha logo após a última linha do comentário.
+                        EditPoint ep = doc.StartPoint.CreateEditPoint();
+                        int lastLine = doc.EndPoint.Line;
+                        int targetLine = commentEndLine < lastLine ? commentEndLine : lastLine;
+                        ep.MoveToLineAndOffset(targetLine, 1);
+                        ep.EndOfLine();
+
+                        dte.UndoContext.Open("SQL Beaver IA: gerar SQL");
+                        try { ep.Insert("\r\n" + sql); }
+                        finally { dte.UndoContext.Close(); }
+
+                        ShowStatus("SQL gerado pela IA inserido.");
                     }
-
-                    // Insere o SQL numa nova linha logo após a última linha do comentário.
-                    EditPoint ep = doc.StartPoint.CreateEditPoint();
-                    int lastLine = doc.EndPoint.Line;
-                    int targetLine = commentEndLine < lastLine ? commentEndLine : lastLine;
-                    ep.MoveToLineAndOffset(targetLine, 1);
-                    ep.EndOfLine();
-
-                    dte.UndoContext.Open("SQL Beaver IA: gerar SQL");
-                    try { ep.Insert("\r\n" + sql); }
-                    finally { dte.UndoContext.Close(); }
-
-                    ShowStatus("SQL gerado pela IA inserido.");
+                    catch (Exception ex)
+                    {
+                        Log.Error("IA: gerar SQL de comentário (async)", ex);
+                        ShowStatus("falha em IA: gerar SQL — veja Output > SQL Beaver");
+                    }
+                    finally
+                    {
+                        AiBusy = false;
+                    }
                 });
             }
             catch (Exception ex)
             {
+                AiBusy = false;
                 Log.Error("IA: gerar SQL de comentário", ex);
                 ShowStatus("falha em IA: gerar SQL — veja Output > SQL Beaver");
             }
@@ -565,17 +616,67 @@ namespace SqlBeaver.Commands
 
                 if (string.IsNullOrWhiteSpace(sql)) { ShowStatus("IA: nada para analisar."); return; }
 
-                string schemaContext = BuildSchemaContext(dte, text, caretOffset);
-                Ai.AiPrompt prompt = build(sql, schemaContext);
-                string originalSql = sql;
+                // Nível de schema e conexão capturados na UI thread; o escopo é puro do texto+caret.
+                Ai.AiConfig cfg = Ai.AiConfigStore.Load();
+                Ai.AiSchemaScope level = Ai.AiConfigResolver.NormalizeScope(cfg.SchemaScope);
+                string server = null, database = null;
+                Metadata.MetadataRequest request = null;
+                bool hasConn = level != Ai.AiSchemaScope.None &&
+                               TryGetConnectionInfo(out server, out database, out request);
 
-                RunAiAsync(prompt, answer =>
+                string originalSql = sql;
+                string textForScope = text;
+                int caretForScope = caretOffset;
+
+                ShowStatus("aguardando o schema do banco…");
+
+                _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                 {
-                    string body = answer == null ? "" : answer.Trim();
-                    string content =
-                        "/*\r\n" + heading + "\r\n\r\n" + body + "\r\n*/\r\n\r\n" + originalSql.Trim() + "\r\n";
-                    Navigation.DefinitionService.OpenNewQueryWindow(content);
-                    ShowStatus("resultado da IA aberto em nova janela.");
+                    try
+                    {
+                        Metadata.DbMetadata md = hasConn
+                            ? await WaitMetadataAsync(server, database, request, 15000)
+                            : null;
+
+                        // Monta o schema TOON (puro): All → completo; Scope → só tabelas do escopo.
+                        string schema = "";
+                        if (md != null)
+                        {
+                            if (level == Ai.AiSchemaScope.All)
+                            {
+                                schema = Ai.AiSchemaToon.EncodeFull(md);
+                            }
+                            else
+                            {
+                                System.Collections.Generic.IReadOnlyList<Analysis.TableRef> scope =
+                                    Analysis.StatementScopeAnalyzer.GetTablesInScope(textForScope, caretForScope);
+                                schema = Ai.AiSchemaToon.EncodeSubset(scope, md);
+                            }
+                        }
+
+                        Ai.AiPrompt prompt = build(originalSql, schema);
+
+                        ShowStatus("consultando a IA…");
+                        Ai.AiResult result = await CallAiAsync(prompt);
+
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        if (result == null || !result.Ok)
+                        {
+                            ShowStatus("IA: " + (result?.Error ?? "falha desconhecida."));
+                            return;
+                        }
+
+                        string body = (result.Text ?? "").Trim();
+                        string content =
+                            "/*\r\n" + heading + "\r\n\r\n" + body + "\r\n*/\r\n\r\n" + originalSql.Trim() + "\r\n";
+                        Navigation.DefinitionService.OpenNewQueryWindow(content);
+                        ShowStatus("resultado da IA aberto em nova janela.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(opName + " (async)", ex);
+                        ShowStatus("falha em " + opName + " — veja Output > SQL Beaver");
+                    }
                 });
             }
             catch (Exception ex)
@@ -586,64 +687,96 @@ namespace SqlBeaver.Commands
         }
 
         /// <summary>
-        /// Executa o prompt no provedor ativo em background (timeout ~60s) e aplica
-        /// <paramref name="apply"/> na UI thread em caso de sucesso. Erros viram status.
+        /// Executa o prompt no provedor ativo em background (timeout 60s) e retorna o
+        /// <see cref="Ai.AiResult"/>. Carrega config/provider/chave. Nunca lança: timeout/erro
+        /// viram AiResult.Fail. Roda fora da UI thread.
         /// </summary>
-        private static void RunAiAsync(Ai.AiPrompt prompt, Action<string> apply)
+        private static async System.Threading.Tasks.Task<Ai.AiResult> CallAiAsync(Ai.AiPrompt prompt)
         {
-            Ai.AiConfig cfg = Ai.AiConfigStore.Load();
-            Ai.IAiProvider provider = Ai.AiProviders.ById(cfg.Provider);
-            string model = string.IsNullOrWhiteSpace(cfg.Model) ? provider.DefaultModel : cfg.Model;
-            string apiKey = Ai.AiConfigStore.GetApiKey();
-            // Folgado o bastante para modelos "thinking" (ex.: gemini-*-flash), em que o
-            // raciocínio consome parte do orçamento antes da resposta final.
-            int maxTokens = 4096;
-
-            ShowStatus("consultando a IA…");
-
-            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            try
             {
-                Ai.AiResult result;
-                try
-                {
-                    using (var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(60)))
-                    {
-                        var req = new Ai.AiRequest
-                        {
-                            System    = prompt.System,
-                            User      = prompt.User,
-                            MaxTokens = maxTokens,
-                        };
-                        result = await System.Threading.Tasks.Task.Run(
-                            () => provider.CompleteAsync(req, model, apiKey, cts.Token), cts.Token);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    result = Ai.AiResult.Fail("tempo esgotado ao consultar a IA.");
-                }
-                catch (Exception ex)
-                {
-                    Log.Error("RunAiAsync", ex);
-                    result = Ai.AiResult.Fail("falha ao consultar a IA.");
-                }
+                Ai.AiConfig cfg = Ai.AiConfigStore.Load();
+                Ai.IAiProvider provider = Ai.AiProviders.ById(cfg.Provider);
+                string model = string.IsNullOrWhiteSpace(cfg.Model) ? provider.DefaultModel : cfg.Model;
+                string apiKey = Ai.AiConfigStore.GetApiKey();
+                // Folgado o bastante para modelos "thinking" (ex.: gemini-*-flash), em que o
+                // raciocínio consome parte do orçamento antes da resposta final.
+                int maxTokens = 4096;
 
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                try
+                using (var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(60)))
                 {
-                    if (result == null || !result.Ok)
+                    var req = new Ai.AiRequest
                     {
-                        ShowStatus("IA: " + (result?.Error ?? "falha desconhecida."));
-                        return;
-                    }
-                    apply(result.Text ?? string.Empty);
+                        System    = prompt.System,
+                        User      = prompt.User,
+                        MaxTokens = maxTokens,
+                    };
+                    return await System.Threading.Tasks.Task.Run(
+                        () => provider.CompleteAsync(req, model, apiKey, cts.Token), cts.Token);
                 }
-                catch (Exception ex)
+            }
+            catch (OperationCanceledException)
+            {
+                return Ai.AiResult.Fail("tempo esgotado ao consultar a IA.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("CallAiAsync", ex);
+                return Ai.AiResult.Fail("falha ao consultar a IA.");
+            }
+        }
+
+        /// <summary>
+        /// Espera (com timeout) a metadata do cache ficar pronta, FORA da UI thread.
+        /// A primeira chamada a TryGet dispara a carga em background; as seguintes devolvem
+        /// a metadata pronta. Retorna null se o timeout estourar. TryGet é thread-safe.
+        /// </summary>
+        private static System.Threading.Tasks.Task<Metadata.DbMetadata> WaitMetadataAsync(
+            string server, string database, Metadata.MetadataRequest request, int timeoutMs)
+        {
+            // Task.Run garante que o laço (inclusive a 1ª TryGet, que dispara a carga) rode FORA
+            // da UI thread, independentemente do contexto do chamador.
+            return System.Threading.Tasks.Task.Run(async () =>
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (true)
                 {
-                    Log.Error("RunAiAsync: aplicar resultado", ex);
-                    ShowStatus("falha ao aplicar resultado da IA — veja Output > SQL Beaver");
+                    Metadata.DbMetadata md =
+                        Completion.SqlBeaverCompletionSourceProvider.Cache.TryGet(server, database, request);
+                    if (md != null)
+                        return md;
+                    if (sw.ElapsedMilliseconds >= timeoutMs)
+                        return null;
+                    await System.Threading.Tasks.Task.Delay(250).ConfigureAwait(false);
                 }
             });
+        }
+
+        /// <summary>
+        /// Captura, NA UI THREAD, os dados da conexão ativa para uso posterior fora dela.
+        /// Retorna false (e nulls) quando não há conexão ativa.
+        /// </summary>
+        private static bool TryGetConnectionInfo(out string server, out string database,
+            out Metadata.MetadataRequest request)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            server = null;
+            database = null;
+            request = null;
+
+            Connection.ActiveConnection conn = Connection.ConnectionService.GetActiveConnection();
+            if (conn == null)
+                return false;
+
+            server = conn.Server;
+            database = conn.Database;
+            request = new Metadata.MetadataRequest
+            {
+                ConnectionString       = conn.ConnectionString,
+                AccessToken            = conn.AccessToken,
+                ProviderConnectionType = conn.ProviderConnectionType,
+            };
+            return true;
         }
 
         /// <summary>
@@ -731,56 +864,6 @@ namespace SqlBeaver.Commands
             if (string.IsNullOrWhiteSpace(text)) return false;
             string t = text.TrimStart();
             return t.StartsWith("--") || t.StartsWith("/*");
-        }
-
-        private static string BuildSchemaContext(DTE2 dte, string text, int caretOffset)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-            try
-            {
-                Ai.AiConfig cfg = Ai.AiConfigStore.Load();
-                Ai.AiSchemaScope level = Ai.AiConfigResolver.NormalizeScope(cfg.SchemaScope);
-                if (level == Ai.AiSchemaScope.None) return string.Empty;
-
-                Metadata.DbMetadata metadata = GetMetadataForCommands(dte);
-                if (metadata == null) return string.Empty;
-
-                System.Collections.Generic.IReadOnlyList<Analysis.TableRef> scope =
-                    Analysis.StatementScopeAnalyzer.GetTablesInScope(text, caretOffset);
-                // TOON compacto: All → schema completo; Scope → só as tabelas do escopo.
-                return level == Ai.AiSchemaScope.All
-                    ? Ai.AiSchemaToon.EncodeFull(metadata)
-                    : Ai.AiSchemaToon.EncodeSubset(scope, metadata);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("BuildSchemaContext", ex);
-                return string.Empty;
-            }
-        }
-
-        /// <summary>Contexto de schema para a GERAÇÃO por comentário: envia o schema COMPLETO do banco
-        /// em TOON (formato tabular compacto) — como não há escopo ainda, a IA precisa conhecer todas as
-        /// tabelas reais para escolher as certas. None suprime; demais níveis → schema completo.</summary>
-        private static string BuildGenerateSchemaContext(DTE2 dte, string comment, string text, int caretOffset)
-        {
-            ThreadHelper.ThrowIfNotOnUIThread();
-            try
-            {
-                Ai.AiConfig cfg = Ai.AiConfigStore.Load();
-                Ai.AiSchemaScope level = Ai.AiConfigResolver.NormalizeScope(cfg.SchemaScope);
-                if (level == Ai.AiSchemaScope.None) return string.Empty;
-
-                Metadata.DbMetadata metadata = GetMetadataForCommands(dte);
-                if (metadata == null) return string.Empty;
-
-                return Ai.AiSchemaToon.EncodeFull(metadata);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("BuildGenerateSchemaContext", ex);
-                return string.Empty;
-            }
         }
 
         // ---------------------------------------------------------------

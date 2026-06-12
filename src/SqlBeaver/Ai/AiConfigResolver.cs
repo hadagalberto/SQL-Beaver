@@ -23,5 +23,14 @@ namespace SqlBeaver.Ai
         {
             return AiProviders.ById(provider).Id;
         }
+
+        /// <summary>Geração ao pressionar Enter num comentário: ligada por padrão.
+        /// Só "false" (case-insensitive) desliga; null/ausente/qualquer outro valor → ligada
+        /// (mantém o default ON para ai.json antigos que não têm o campo).</summary>
+        public static bool AutoGenerateOnEnter(AiConfig cfg)
+        {
+            if (cfg == null) return true;
+            return !string.Equals(cfg.AutoGenerateOnEnter, "false", StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

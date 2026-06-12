@@ -250,12 +250,19 @@ Você escolhe o provedor e fornece a sua própria chave de API.
 - **Testar conexão:** valida provedor + modelo + chave com uma chamada trivial.
 - **Contexto de schema:** escolha o que vai junto do seu SQL — *Tabelas no escopo*
   (default), *Nenhum* ou *Banco todo*.
+- **Gerar ao pressionar Enter num comentário:** ligado por padrão; desmarque para
+  só gerar pelo comando/atalho explícito.
 
 **Comandos** (Tools > SQL Beaver ou clique direito no editor):
 
 - **IA: gerar SQL de comentário** (atalho **Ctrl+K, Ctrl+A**) — posicione o cursor
   numa linha de comentário (`--` ou `/* */`) descrevendo o que você quer; o SQL
-  gerado é inserido logo abaixo do comentário (uma única edição/undo).
+  gerado é inserido logo abaixo do comentário (uma única edição/undo). A geração
+  **aguarda o cache de schema carregar** (com timeout) antes de chamar a IA, para
+  que ela receba as tabelas reais do banco logo após conectar.
+- **Gerar ao pressionar Enter num comentário** (configurável no diálogo de IA;
+  **ligado por padrão**) — ao dar Enter numa linha `--` com uma instrução real, a
+  geração dispara automaticamente, sem precisar do atalho.
 - **IA: explicar SQL** — explica o statement atual (ou a seleção) em PT-BR; abre o
   resultado em nova janela.
 - **IA: otimizar SQL** — analisa desempenho e propõe uma versão melhorada; abre o

@@ -25,6 +25,42 @@ namespace SqlBeaver.Tests
             Assert.Equal("anthropic", AiConfigResolver.NormalizeProvider(null));
         }
 
+        // ── AutoGenerateOnEnter (default ON; só "false" desliga) ──────────────
+
+        [Fact]
+        public void AutoGenerateOnEnter_FalseString_IsOff()
+        {
+            Assert.False(AiConfigResolver.AutoGenerateOnEnter(new AiConfig { AutoGenerateOnEnter = "false" }));
+            Assert.False(AiConfigResolver.AutoGenerateOnEnter(new AiConfig { AutoGenerateOnEnter = "FALSE" }));
+        }
+
+        [Fact]
+        public void AutoGenerateOnEnter_NullOrAbsent_IsOn()
+        {
+            Assert.True(AiConfigResolver.AutoGenerateOnEnter(new AiConfig { AutoGenerateOnEnter = null }));
+            Assert.True(AiConfigResolver.AutoGenerateOnEnter(new AiConfig()));
+            Assert.True(AiConfigResolver.AutoGenerateOnEnter(null));
+        }
+
+        [Fact]
+        public void AutoGenerateOnEnter_TrueOrOther_IsOn()
+        {
+            Assert.True(AiConfigResolver.AutoGenerateOnEnter(new AiConfig { AutoGenerateOnEnter = "true" }));
+            Assert.True(AiConfigResolver.AutoGenerateOnEnter(new AiConfig { AutoGenerateOnEnter = "xpto" }));
+        }
+
+        [Fact]
+        public void AutoGenerateOnEnter_RoundtripsThroughJson()
+        {
+            AiConfig def = AiConfig.CreateDefault();
+            Assert.Equal("true", def.AutoGenerateOnEnter);
+
+            var off = new AiConfig { Provider = "anthropic", SchemaScope = "scope", AutoGenerateOnEnter = "false" };
+            AiConfig loaded = AiConfig.Load(off.Serialize());
+            Assert.Equal("false", loaded.AutoGenerateOnEnter);
+            Assert.False(AiConfigResolver.AutoGenerateOnEnter(loaded));
+        }
+
         // ── AiConfig serialize/load roundtrip ─────────────────────────────────
 
         [Fact]

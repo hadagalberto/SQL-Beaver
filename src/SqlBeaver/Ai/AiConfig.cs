@@ -26,12 +26,18 @@ namespace SqlBeaver.Ai
         [DataMember(Name = "keyProtected")]
         public string KeyProtected { get; set; }
 
+        /// <summary>"true" | "false" | null. String (não bool) para distinguir ausente de false
+        /// em ai.json antigos: ausente/null → tratado como ligado por <see cref="AiConfigResolver.AutoGenerateOnEnter"/>.</summary>
+        [DataMember(Name = "autoGenerateOnEnter")]
+        public string AutoGenerateOnEnter { get; set; }
+
         public static AiConfig CreateDefault() => new AiConfig
         {
             Provider = "anthropic",
             Model = "",
             SchemaScope = "scope",
             KeyProtected = null,
+            AutoGenerateOnEnter = "true",
         };
 
         /// <summary>Serializa no mesmo formato do arquivo ai.json. Não inclui o plaintext da chave.</summary>
@@ -42,7 +48,8 @@ namespace SqlBeaver.Ai
                 $"  \"provider\": \"{Escape(Provider ?? "anthropic")}\",\r\n" +
                 $"  \"model\": \"{Escape(Model ?? "")}\",\r\n" +
                 $"  \"schemaScope\": \"{Escape(SchemaScope ?? "scope")}\",\r\n" +
-                $"  \"keyProtected\": {(KeyProtected == null ? "null" : "\"" + Escape(KeyProtected) + "\"")}\r\n" +
+                $"  \"keyProtected\": {(KeyProtected == null ? "null" : "\"" + Escape(KeyProtected) + "\"")},\r\n" +
+                $"  \"autoGenerateOnEnter\": \"{Escape(AutoGenerateOnEnter ?? "true")}\"\r\n" +
                 "}\r\n";
         }
 
@@ -91,6 +98,7 @@ namespace SqlBeaver.Ai
                             case "model": cfg.Model = value; break;
                             case "schemaScope": cfg.SchemaScope = value; break;
                             case "keyProtected": cfg.KeyProtected = value; break;
+                            case "autoGenerateOnEnter": cfg.AutoGenerateOnEnter = value; break;
                         }
                     }
                 }
