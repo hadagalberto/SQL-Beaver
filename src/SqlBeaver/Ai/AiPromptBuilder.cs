@@ -75,8 +75,11 @@ namespace SqlBeaver.Ai
 
             var sb = new StringBuilder();
             sb.Append(body);
-            sb.Append("\n\nSchema do banco (use SOMENTE estas tabelas e colunas — não invente nomes; ");
-            sb.Append("os nomes de tabela já vêm qualificados com o schema, ex.: Cadastro.Pessoas):\n");
+            sb.Append("\n\nSchema do banco em TOON (formato tabular compacto: cada bloco 'nome[N]{campos}:' ");
+            sb.Append("é seguido de N linhas com os valores separados por vírgula, na ordem dos campos; ");
+            sb.Append("valores com vírgula vêm entre aspas; em columns, pk=1 indica chave primária). ");
+            sb.Append("Use SOMENTE estas tabelas e colunas — não invente nomes; ");
+            sb.Append("qualifique sempre a tabela com o schema (ex.: Cadastro.Pessoas):\n");
             sb.Append(schemaContext.Trim());
             return sb.ToString();
         }

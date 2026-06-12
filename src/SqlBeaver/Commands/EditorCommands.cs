@@ -747,7 +747,10 @@ namespace SqlBeaver.Commands
 
                 System.Collections.Generic.IReadOnlyList<Analysis.TableRef> scope =
                     Analysis.StatementScopeAnalyzer.GetTablesInScope(text, caretOffset);
-                return Ai.AiSchemaContext.Render(scope, metadata, level);
+                // TOON compacto: All → schema completo; Scope → só as tabelas do escopo.
+                return level == Ai.AiSchemaScope.All
+                    ? Ai.AiSchemaToon.EncodeFull(metadata)
+                    : Ai.AiSchemaToon.EncodeSubset(scope, metadata);
             }
             catch (Exception ex)
             {
@@ -756,8 +759,9 @@ namespace SqlBeaver.Commands
             }
         }
 
-        /// <summary>Contexto de schema para a GERAÇÃO por comentário: ancora a IA nas tabelas reais
-        /// (relevantes ao comentário, com colunas) + catálogo de nomes qualificados do banco.</summary>
+        /// <summary>Contexto de schema para a GERAÇÃO por comentário: envia o schema COMPLETO do banco
+        /// em TOON (formato tabular compacto) — como não há escopo ainda, a IA precisa conhecer todas as
+        /// tabelas reais para escolher as certas. None suprime; demais níveis → schema completo.</summary>
         private static string BuildGenerateSchemaContext(DTE2 dte, string comment, string text, int caretOffset)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -770,9 +774,7 @@ namespace SqlBeaver.Commands
                 Metadata.DbMetadata metadata = GetMetadataForCommands(dte);
                 if (metadata == null) return string.Empty;
 
-                System.Collections.Generic.IReadOnlyList<Analysis.TableRef> scope =
-                    Analysis.StatementScopeAnalyzer.GetTablesInScope(text, caretOffset);
-                return Ai.AiSchemaContext.RenderForGenerate(comment, scope, metadata, level);
+                return Ai.AiSchemaToon.EncodeFull(metadata);
             }
             catch (Exception ex)
             {
