@@ -381,6 +381,17 @@ namespace SqlBeaver.Session
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
+                // Espera uma conexão existir antes de reabrir as abas. Assim a janela criada via
+                // ScriptFactory HERDA a conexão atual (a que o usuário escolheu no prompt nativo do
+                // startup) SEM disparar um novo "Conectar ao servidor" — reconecta "onde você estava".
+                // Sai cedo assim que houver conexão; se não houver (ambiente vazio), abre após o timeout.
+                for (int i = 0; i < 60; i++)
+                {
+                    if (Connection.ConnectionService.GetActiveConnection() != null) break;
+                    await Task.Delay(500).ConfigureAwait(false);
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                }
+
                 int restored = 0;
                 foreach (SessionEntry entry in entries)
                 {
@@ -392,8 +403,8 @@ namespace SqlBeaver.Session
                         string content = File.ReadAllText(entry.File, Encoding.UTF8);
                         if (string.IsNullOrEmpty(content)) continue;
 
-                        // Desconectado: a aba reabre sem disparar o diálogo "Conectar ao servidor".
-                        Navigation.DefinitionService.OpenDisconnectedQueryWindow(content);
+                        // Via ScriptFactory: herda a conexão atual (sem novo prompt quando já há conexão).
+                        Navigation.DefinitionService.OpenNewQueryWindow(content);
                         restored++;
                     }
                     catch (Exception entryEx)
