@@ -253,7 +253,7 @@ Você escolhe o provedor e fornece a sua própria chave de API.
 
 **Comandos** (Tools > SQL Beaver ou clique direito no editor):
 
-- **IA: gerar SQL de comentário** (atalho **Ctrl+K, Ctrl+I**) — posicione o cursor
+- **IA: gerar SQL de comentário** (atalho **Ctrl+K, Ctrl+A**) — posicione o cursor
   numa linha de comentário (`--` ou `/* */`) descrevendo o que você quer; o SQL
   gerado é inserido logo abaixo do comentário (uma única edição/undo).
 - **IA: explicar SQL** — explica o statement atual (ou a seleção) em PT-BR; abre o

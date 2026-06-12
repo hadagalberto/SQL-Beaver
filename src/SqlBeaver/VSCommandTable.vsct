@@ -165,7 +165,8 @@
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidFindObject" editor="guidVSStd97" key1="K" mod1="Control" key2="O" mod2="Control" />
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidGoToDefinition" editor="guidVSStd97" key1="K" mod1="Control" key2="G" mod2="Control" />
     <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidRunCurrentStatement" editor="guidVSStd97" key1="VK_F5" mod1="Control Shift" />
-    <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidAiGenerateFromComment" editor="guidVSStd97" key1="K" mod1="Control" key2="I" mod2="Control" />
+    <!-- Ctrl+K,Ctrl+I é o Quick Info nativo do editor (vence o nosso); usamos Ctrl+K,Ctrl+A (A de IA). -->
+    <KeyBinding guid="guidSqlBeaverCmdSet" id="cmdidAiGenerateFromComment" editor="guidVSStd97" key1="K" mod1="Control" key2="A" mod2="Control" />
   </KeyBindings>
 
   <Symbols>
