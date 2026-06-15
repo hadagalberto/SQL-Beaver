@@ -49,7 +49,9 @@ namespace SqlBeaver.Tests
             Assert.NotNull(r);
             Assert.Equal(caret, r.Start);
             Assert.Equal(1, r.Length);
-            Assert.Equal("Id, Name, Total", r.NewText);
+            // v1: cada coluna em sua própria linha, alinhada sob a primeira (replStart na col 7).
+            string indent = new string(' ', 7);
+            Assert.Equal("Id,\n" + indent + "Name,\n" + indent + "Total", r.NewText);
         }
 
         [Fact]
@@ -87,7 +89,9 @@ namespace SqlBeaver.Tests
             // span should start at 'p' (alias start)
             Assert.Equal(sql.IndexOf("p.*"), r.Start);
             Assert.Equal(3, r.Length); // "p.*"
-            Assert.Equal("ProductId, Price", r.NewText);
+            // v1: multilinha, alinhada sob a primeira coluna (replStart 'p' na col 7).
+            string indent = new string(' ', 7);
+            Assert.Equal("ProductId,\n" + indent + "Price", r.NewText);
         }
 
         [Fact]
@@ -150,7 +154,74 @@ namespace SqlBeaver.Tests
             TextReplacement r = WildcardExpander.TryExpand(sql, caret, db);
 
             Assert.NotNull(r);
-            Assert.Equal("Id, Name", r.NewText);
+            // v1: multilinha (replStart na col 7).
+            string indent = new string(' ', 7);
+            Assert.Equal("Id,\n" + indent + "Name", r.NewText);
+        }
+
+        // ---------------------------------------------------------------
+        // v1: novo formato multilinha + helper de detecção de wildcard
+        // ---------------------------------------------------------------
+
+        [Fact]
+        public void Indented_SelectStar_ContinuationAlignsUnderFirstColumn()
+        {
+            DbMetadata db = MakeDb(("dbo", "Orders", new[] { "Id", "Name", "Total" }));
+            // 4 spaces de indentação antes de SELECT → '*' na coluna 11 (4+"SELECT "=11).
+            string sql = "    SELECT * FROM dbo.Orders";
+            int caret = sql.IndexOf('*');
+
+            TextReplacement r = WildcardExpander.TryExpand(sql, caret, db);
+
+            Assert.NotNull(r);
+            string indent = new string(' ', 11);
+            Assert.Equal("Id,\n" + indent + "Name,\n" + indent + "Total", r.NewText);
+        }
+
+        [Fact]
+        public void TryFindWildcardAt_StarAtCaret()
+        {
+            string sql = "SELECT * FROM dbo.Orders";
+            int star = sql.IndexOf('*');
+            bool found = WildcardExpander.TryFindWildcardAt(sql, star, out int replStart, out int starEnd, out string alias);
+            Assert.True(found);
+            Assert.Equal(star, replStart);
+            Assert.Equal(star + 1, starEnd);
+            Assert.Null(alias);
+        }
+
+        [Fact]
+        public void TryFindWildcardAt_AliasStar()
+        {
+            string sql = "SELECT p.* FROM dbo.Products p";
+            int star = sql.IndexOf("p.*") + 2;
+            bool found = WildcardExpander.TryFindWildcardAt(sql, star, out int replStart, out int starEnd, out string alias);
+            Assert.True(found);
+            Assert.Equal(sql.IndexOf("p.*"), replStart);
+            Assert.Equal(star + 1, starEnd);
+            Assert.Equal("p", alias);
+        }
+
+        [Fact]
+        public void TryFindWildcardAt_CaretBeforeStar()
+        {
+            string sql = "SELECT * FROM dbo.Orders";
+            int star = sql.IndexOf('*');
+            // caret immediately after '*' (FindStar also accepts char before caret)
+            bool found = WildcardExpander.TryFindWildcardAt(sql, star + 1, out int replStart, out int starEnd, out string alias);
+            Assert.True(found);
+            Assert.Equal(star, replStart);
+            Assert.Equal(star + 1, starEnd);
+            Assert.Null(alias);
+        }
+
+        [Fact]
+        public void TryFindWildcardAt_NotAWildcard_False()
+        {
+            string sql = "SELECT Id FROM dbo.Orders";
+            int caret = sql.IndexOf("Id");
+            bool found = WildcardExpander.TryFindWildcardAt(sql, caret, out _, out _, out _);
+            Assert.False(found);
         }
     }
 }

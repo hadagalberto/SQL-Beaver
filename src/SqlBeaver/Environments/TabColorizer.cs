@@ -27,6 +27,9 @@ namespace SqlBeaver.Environments
         private static readonly Dictionary<string, Color?> _colorsByCaption =
             new Dictionary<string, Color?>(StringComparer.OrdinalIgnoreCase);
         private static bool _loggedWalkFailure;
+        // Diagnóstico: loga UMA vez os tipos de elemento candidatos a aba quando nenhuma aba
+        // for encontrada (nomes internos do SSMS variam entre builds).
+        private static bool _loggedNoTabs;
 
         // Retido para uso em RefreshAfterRulesChanged (chamado fora da inicialização)
         private static DTE2 _dte;
@@ -109,16 +112,35 @@ namespace SqlBeaver.Environments
                     foreach (FrameworkElement group in groups)
                         CollectByTypeName(group, "DragUndockHeader", tabs, 0);
                 }
+                // Fallbacks adicionais: builds do SSMS 22 podem usar outros nomes de tipo
+                // para a aba. Tenta candidatos conhecidos e qualquer tipo terminado em "TabItem".
+                if (tabs.Count == 0)
+                {
+                    CollectByTypeName(mainWindow, "TitleBarButton", tabs, 0);
+                    CollectByTypeName(mainWindow, "DragUndockHeader", tabs, 0);
+                    CollectBySuffix(mainWindow, "TabItem", tabs, 0);
+                }
+
+                if (tabs.Count == 0)
+                {
+                    LogTabTypeNamesOnce(mainWindow);
+                    return;
+                }
 
                 foreach (FrameworkElement tab in tabs)
                 {
                     string header = NormalizeCaption((tab as HeaderedContentControl)?.Header?.ToString());
+                    // Sem cor aprendida para esta legenda: NÃO limpa — abas visitadas mantêm a cor.
                     if (header == null || !_colorsByCaption.TryGetValue(header, out Color? color))
                         continue;
 
+                    // Candidatos de pintura: as bordas curvas conhecidas e, como fallback, qualquer
+                    // Border/Grid descendente (mais builds do SSMS são pintadas).
                     FrameworkElement target =
                         FindDescendantByTypeName(tab, "SimpleCurvedBorder") ??
                         FindDescendantByTypeName(tab, "TopCurvedBorder") ??
+                        FindDescendantOfType<Border>(tab) ??
+                        FindDescendantOfType<System.Windows.Controls.Grid>(tab) ??
                         tab;
 
                     if (color == null)
@@ -132,6 +154,8 @@ namespace SqlBeaver.Environments
                         brush.Freeze();
                         if (target is Border)
                             target.SetValue(Border.BackgroundProperty, brush);
+                        else if (target is Panel)
+                            target.SetValue(Panel.BackgroundProperty, brush);
                         else
                             target.SetValue(Control.BackgroundProperty, brush);
                     }
@@ -202,6 +226,79 @@ namespace SqlBeaver.Environments
             var matches = new List<FrameworkElement>();
             CollectByTypeName(root, typeName, matches, 0);
             return matches.Count > 0 ? matches[0] : null;
+        }
+
+        // Coleta FrameworkElements cujo nome de tipo termina com 'suffix' (ex.: "TabItem").
+        private static void CollectBySuffix(DependencyObject root, string suffix, List<FrameworkElement> result, int depth)
+        {
+            if (root == null || depth > 30) return;
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                if (child is FrameworkElement fe && fe.GetType().Name.EndsWith(suffix, StringComparison.Ordinal))
+                    result.Add(fe);
+                CollectBySuffix(child, suffix, result, depth + 1);
+            }
+        }
+
+        // Primeiro descendente do tipo T (busca em largura simples via recursão).
+        private static FrameworkElement FindDescendantOfType<T>(DependencyObject root) where T : FrameworkElement
+            => FindDescendantOfType<T>(root, 0);
+
+        private static FrameworkElement FindDescendantOfType<T>(DependencyObject root, int depth) where T : FrameworkElement
+        {
+            if (root == null || depth > 30) return null;
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                if (child is T match) return match;
+                FrameworkElement found = FindDescendantOfType<T>(child, depth + 1);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Diagnóstico (uma vez): quando nenhuma aba é encontrada, loga os nomes de tipo distintos
+        /// dos FrameworkElements sob a janela principal cujo nome contém "Tab"/"DocumentGroup"/"Title"
+        /// (profundidade ≤ 12), para revelar o tipo real da aba neste build do SSMS e permitir ajuste.
+        /// </summary>
+        private static void LogTabTypeNamesOnce(DependencyObject mainWindow)
+        {
+            if (_loggedNoTabs) return;
+            _loggedNoTabs = true;
+            try
+            {
+                var names = new SortedSet<string>(StringComparer.Ordinal);
+                CollectCandidateTypeNames(mainWindow, names, 0);
+                string list = names.Count > 0 ? string.Join(", ", names) : "(nenhum)";
+                Log.Info("TabColorizer: tipos de aba encontrados: " + list);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("TabColorizer.LogTabTypeNamesOnce", ex);
+            }
+        }
+
+        private static void CollectCandidateTypeNames(DependencyObject root, SortedSet<string> names, int depth)
+        {
+            if (root == null || depth > 12) return;
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                if (child is FrameworkElement fe)
+                {
+                    string n = fe.GetType().Name;
+                    if (n.IndexOf("Tab", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("DocumentGroup", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("Title", StringComparison.Ordinal) >= 0)
+                        names.Add(n);
+                }
+                CollectCandidateTypeNames(child, names, depth + 1);
+            }
         }
     }
 }

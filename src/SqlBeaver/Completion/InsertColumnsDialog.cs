@@ -28,10 +28,17 @@ namespace SqlBeaver.Completion
 
         public string ResultText { get; private set; }
 
+        // v1: indentação de continuação (alinha as colunas inseridas sob o caret). Quando
+        // nulo/vazio, mantém o comportamento de linha única.
+        private readonly string _continuationIndent;
+
         public InsertColumnsDialog(
             IReadOnlyList<TableRef> scope,
-            DbMetadata metadata)
+            DbMetadata metadata,
+            string continuationIndent = null)
         {
+            _continuationIndent = continuationIndent;
+
             Text = "SQL Beaver — Inserir colunas…";
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = false;
@@ -217,7 +224,7 @@ namespace SqlBeaver.Completion
                 seenQualifiers.Add(q);
             multiTable = seenQualifiers.Count > 1;
 
-            ResultText = ColumnListBuilder.Build(selected, multiTable);
+            ResultText = ColumnListBuilder.Build(selected, multiTable, _continuationIndent);
             DialogResult = DialogResult.OK;
             Close();
         }

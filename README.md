@@ -49,7 +49,9 @@ própria janela de query.
   (Produção, Homologação, Desenvolvimento) com nome, servidor e banco.
 - A própria **aba** também é pintada (via árvore visual, pois o shell não expõe API
   pública — se um update do SSMS quebrar, a faixa colorida continua funcionando). A aba
-  ganha cor ao ser ativada pela primeira vez.
+  ganha cor ao ser ativada pela primeira vez. Se a cor da aba não aparecer no seu build do
+  SSMS, o painel **Output > SQL Beaver** registra (uma vez) os nomes de tipo de aba
+  encontrados na árvore visual — use esse log de diagnóstico para reportar e ajustar.
 - Configurável via **menu Tools > SQL Beaver > Ambientes (cores)…** (ou clique direito no editor):
   abre o editor visual de regras com ListView colorido, botões Adicionar/Editar/Remover/Subir/Descer
   e ColorDialog integrado. As alterações são salvas e aplicadas imediatamente, sem reiniciar o SSMS.
@@ -140,7 +142,10 @@ maiúsculas automaticamente enquanto você digita.
 Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 
 - **Expand wildcard** — substitui `SELECT *` (ou `t.*`) pela lista de colunas do
-  escopo, qualificadas por alias quando há múltiplas tabelas.
+  escopo, qualificadas por alias quando há múltiplas tabelas. Expand wildcard e
+  Inserir colunas agora colocam cada coluna em uma linha (alinhada sob a primeira).
+- **Ctrl+Espaço** com o cursor ao lado de `*` (ou `alias.*`) num SELECT abre o
+  seletor de colunas; ao confirmar, substitui o `*` pelas colunas escolhidas.
 - **Qualify names** / **Remove qualificação** — adiciona ou remove o prefixo de
   schema nos identificadores de tabela.
 - **Rename alias / @variável** — diálogo de novo nome; substituição
@@ -179,7 +184,8 @@ Disponível no menu de contexto do editor → **SQL Beaver: Refatorar**:
 ### Interface
 
 - **Inserir colunas…** — abre um diálogo com as tabelas do escopo e checkboxes por coluna
-  (filtro por substring no topo); OK insere a lista qualificada no caret com um único undo.
+  (filtro por substring no topo); OK insere a lista qualificada no caret com um único undo,
+  uma coluna por linha (alinhada sob o caret).
   Disponível via clique direito no editor e em **Tools > SQL Beaver**.
 - Menu **Tools > SQL Beaver** e toolbar **SQL Beaver** com os principais comandos.
 - Atalhos padrão reconfiguráveis em **Tools > Options > Keyboard**:

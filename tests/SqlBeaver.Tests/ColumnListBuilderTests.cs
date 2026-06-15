@@ -57,5 +57,45 @@ namespace SqlBeaver.Tests
             string result = ColumnListBuilder.Build(selected, multiTable: false);
             Assert.Equal("C, A, B", result);
         }
+
+        [Fact]
+        public void NullIndent_SingleLine_BackCompat()
+        {
+            var selected = new List<(string, ColumnEntry)>
+            {
+                ("t", Col("A")),
+                ("t", Col("B")),
+                ("t", Col("C")),
+            };
+            string result = ColumnListBuilder.Build(selected, multiTable: false, continuationIndent: null);
+            Assert.Equal("A, B, C", result);
+        }
+
+        [Fact]
+        public void Indent_MultiLine_EachColumnOnOwnLine()
+        {
+            var selected = new List<(string, ColumnEntry)>
+            {
+                ("t", Col("A")),
+                ("t", Col("B")),
+                ("t", Col("C")),
+            };
+            string indent = new string(' ', 7);
+            string result = ColumnListBuilder.Build(selected, multiTable: false, continuationIndent: indent);
+            Assert.Equal("A,\n" + indent + "B,\n" + indent + "C", result);
+        }
+
+        [Fact]
+        public void Indent_MultiTable_QualifiesEachColumn()
+        {
+            var selected = new List<(string, ColumnEntry)>
+            {
+                ("p", Col("Nome")),
+                ("e", Col("Email")),
+            };
+            string indent = new string(' ', 4);
+            string result = ColumnListBuilder.Build(selected, multiTable: true, continuationIndent: indent);
+            Assert.Equal("p.Nome,\n" + indent + "e.Email", result);
+        }
     }
 }

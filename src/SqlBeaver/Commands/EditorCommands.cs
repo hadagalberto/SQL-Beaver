@@ -210,6 +210,10 @@ namespace SqlBeaver.Commands
                 if (scope == null || scope.Count == 0)
                 { ShowStatus("Inserir colunas: nenhuma tabela no escopo do statement."); return; }
 
+                // v1: indentação de continuação = coluna (offset) do caret na sua linha, para
+                // alinhar as colunas inseridas sob o caret (uma coluna por linha).
+                string continuationIndent = new string(' ', ColumnOffsetOnLine(text, caretOffset));
+
                 string resultText;
                 IntPtr hwnd;
                 try { hwnd = new IntPtr((int)dte.MainWindow.HWnd); }
@@ -218,7 +222,7 @@ namespace SqlBeaver.Commands
                 owner.AssignHandle(hwnd);
                 try
                 {
-                    using (var dlg = new Completion.InsertColumnsDialog(scope, metadata))
+                    using (var dlg = new Completion.InsertColumnsDialog(scope, metadata, continuationIndent))
                     {
                         var ownerWin = new NativeWindowWrapper(hwnd);
                         if (dlg.ShowDialog(ownerWin) != System.Windows.Forms.DialogResult.OK) return;
@@ -249,6 +253,119 @@ namespace SqlBeaver.Commands
             {
                 Log.Error("Inserir colunas", ex);
                 ShowStatus("falha em Inserir colunas — veja Output > SQL Beaver");
+            }
+        }
+
+        /// <summary>
+        /// Número de chars do início da linha de <paramref name="offset"/> até <paramref name="offset"/>
+        /// (offset de coluna, base 0), usado como largura da indentação de continuação.
+        /// </summary>
+        private static int ColumnOffsetOnLine(string text, int offset)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+            int clamped = Math.Max(0, Math.Min(offset, text.Length));
+            int lineStart = clamped;
+            while (lineStart > 0 && text[lineStart - 1] != '\n')
+                lineStart--;
+            return clamped - lineStart;
+        }
+
+        /// <summary>
+        /// Ctrl+Espaço ao lado de um <c>*</c> (ou <c>alias.*</c>) num SELECT: abre o seletor de
+        /// colunas com o escopo do statement (alias.* restringe à tabela do alias) e, no OK,
+        /// SUBSTITUI o <c>*</c> (e o prefixo <c>alias.</c>) pela lista escolhida (uma coluna por
+        /// linha, alinhada sob o início do span). Retorna true quando tratou o comando (inclusive
+        /// no Cancelar); false quando não há <c>*</c> aplicável / metadata / escopo (deixa o
+        /// completion normal seguir). Roda na UI thread; nunca lança.
+        /// </summary>
+        public static bool PickColumnsForWildcard()
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                var dte = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                var doc = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+                if (doc == null) return false;
+
+                string text = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                TextSelection sel = doc.Selection;
+                int caretOffset = doc.StartPoint.CreateEditPoint().GetText(sel.ActivePoint).Length;
+
+                // Localiza o '*' / alias.* no/adjacente ao caret e o span de substituição.
+                if (!WildcardExpander.TryFindWildcardAt(text, caretOffset, out int replStart, out int starEnd, out string aliasOrNull))
+                    return false;
+
+                Metadata.DbMetadata metadata = GetMetadataForCommands(dte);
+                if (metadata == null) { ShowStatus("Selecionar colunas: cache ainda carregando — tente novamente."); return false; }
+
+                System.Collections.Generic.IReadOnlyList<Analysis.TableRef> fullScope =
+                    Analysis.StatementScopeAnalyzer.GetTablesInScope(text, caretOffset);
+                if (fullScope == null || fullScope.Count == 0) return false;
+
+                // alias.* → restringe o escopo do diálogo à tabela do alias; '*' → escopo completo.
+                System.Collections.Generic.IReadOnlyList<Analysis.TableRef> scope = fullScope;
+                if (aliasOrNull != null)
+                {
+                    Analysis.TableRef matched = null;
+                    foreach (Analysis.TableRef t in fullScope)
+                    {
+                        if (string.Equals(t.Alias, aliasOrNull, StringComparison.OrdinalIgnoreCase) ||
+                            (t.Alias == null && string.Equals(t.Table, aliasOrNull, StringComparison.OrdinalIgnoreCase)))
+                        { matched = t; break; }
+                    }
+                    if (matched == null) return false;
+                    scope = new System.Collections.Generic.List<Analysis.TableRef> { matched };
+                }
+
+                // Indentação de continuação = coluna (offset) do início do span na sua linha.
+                string continuationIndent = new string(' ', ColumnOffsetOnLine(text, replStart));
+
+                string resultText;
+                IntPtr hwnd;
+                try { hwnd = new IntPtr((int)dte.MainWindow.HWnd); }
+                catch { hwnd = IntPtr.Zero; }
+                var owner = new System.Windows.Forms.NativeWindow();
+                owner.AssignHandle(hwnd);
+                try
+                {
+                    using (var dlg = new Completion.InsertColumnsDialog(scope, metadata, continuationIndent))
+                    {
+                        var ownerWin = new NativeWindowWrapper(hwnd);
+                        // Cancelar: comando tratado (consome o Ctrl+Espaço), sem completion normal.
+                        if (dlg.ShowDialog(ownerWin) != System.Windows.Forms.DialogResult.OK) return true;
+                        resultText = dlg.ResultText;
+                    }
+                }
+                finally
+                {
+                    owner.ReleaseHandle();
+                }
+
+                if (string.IsNullOrEmpty(resultText)) return true;
+
+                // Substitui o span [replStart, starEnd) (que cobre '*' ou 'alias.*') pela lista.
+                TextPosition.FromOffset(text, replStart, out int sLine, out int sCol);
+                TextPosition.FromOffset(text, starEnd, out int eLine, out int eCol);
+
+                dte.UndoContext.Open("SQL Beaver Selecionar colunas");
+                try
+                {
+                    EditPoint ep = doc.StartPoint.CreateEditPoint();
+                    ep.MoveToLineAndOffset(sLine, sCol);
+                    EditPoint end = doc.StartPoint.CreateEditPoint();
+                    end.MoveToLineAndOffset(eLine, eCol);
+                    ep.ReplaceText(end, resultText,
+                        (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
+                }
+                finally { dte.UndoContext.Close(); }
+
+                ShowStatus("colunas inseridas no lugar de *.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Selecionar colunas (Ctrl+Espaço no *)", ex);
+                return false;
             }
         }
 

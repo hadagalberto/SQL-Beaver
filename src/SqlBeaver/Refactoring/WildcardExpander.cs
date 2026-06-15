@@ -31,52 +31,34 @@ namespace SqlBeaver.Refactoring
             if (metadata == null) throw new ArgumentNullException(nameof(metadata));
             if (caretPosition < 0 || caretPosition > text.Length) return null;
 
-            // Find the position of the '*' character at or immediately before/after caret
-            int starPos = FindStarAtCaret(text, caretPosition);
-            if (starPos < 0) return null;
+            // Localiza o '*' (ou alias.*) no/adjacente ao caret e o span de substituição.
+            if (!TryFindWildcardAt(text, caretPosition, out int replStart, out int starEnd, out string aliasOrNull))
+                return null;
 
-            // Must not be inside a comment or string
-            if (SqlContextAnalyzer.IsInsideCommentOrStringAt(text, starPos)) return null;
-            // Check the character after star too (for caret-before-star case)
-            if (starPos < text.Length - 1 && SqlContextAnalyzer.IsInsideCommentOrStringAt(text, starPos + 1)) return null;
-
-            // Check if this is alias.* form
-            int dotPos = -1;
-            int aliasStart = -1;
-            int aliasEnd = -1;
-            if (starPos > 0 && text[starPos - 1] == '.')
-            {
-                dotPos = starPos - 1;
-                // scan back to find the alias identifier
-                int i = dotPos - 1;
-                while (i >= 0 && IsIdentChar(text[i])) i--;
-                aliasStart = i + 1;
-                aliasEnd = dotPos; // exclusive
-            }
-
-            // Verify this * is in a SELECT-ish context (previous non-ws non-alias token is SELECT/DISTINCT/,/(/.)
-            if (!IsSelectContext(text, starPos, aliasStart >= 0 ? aliasStart : starPos)) return null;
+            int starPos = starEnd - 1;
 
             // Get tables in scope
             IReadOnlyList<TableRef> tables = StatementScopeAnalyzer.GetTablesInScope(text, caretPosition);
 
-            // Determine replacement span: covers alias.* or just *
-            int replStart = aliasStart >= 0 ? aliasStart : starPos;
-            int replLen   = (starPos + 1) - replStart;
+            int replLen = starEnd - replStart;
+
+            // Indentação de continuação = coluna (offset) de replStart na sua linha, para que
+            // as colunas seguintes fiquem alinhadas sob a primeira (mudança intencional v1:
+            // cada coluna em sua própria linha, no estilo trailing-comma).
+            string continuationIndent = new string(' ', ColumnOffsetOnLine(text, replStart));
 
             // Build column list
             string columns;
-            if (aliasStart >= 0)
+            if (aliasOrNull != null)
             {
                 // alias.* — only that table's columns, bare names
-                string alias = text.Substring(aliasStart, aliasEnd - aliasStart);
-                TableRef matched = FindByAlias(tables, alias);
+                TableRef matched = FindByAlias(tables, aliasOrNull);
                 if (matched == null) return null;
 
                 IReadOnlyList<ColumnEntry> cols = GetColumns(matched, metadata);
                 if (cols == null || cols.Count == 0) return null;
 
-                columns = JoinColumns(cols, null);
+                columns = JoinColumns(cols, null, continuationIndent);
             }
             else
             {
@@ -97,7 +79,8 @@ namespace SqlBeaver.Refactoring
                     string qualifier = qualify ? (tref.Alias ?? tref.Table) : null;
                     foreach (ColumnEntry col in cols)
                     {
-                        if (!first) sb.Append(", ");
+                        // v1: uma coluna por linha (trailing-comma), alinhada sob a primeira.
+                        if (!first) { sb.Append(",\n"); sb.Append(continuationIndent); }
                         if (qualifier != null) { sb.Append(qualifier); sb.Append('.'); }
                         sb.Append(col.Name);
                         first = false;
@@ -109,6 +92,63 @@ namespace SqlBeaver.Refactoring
             }
 
             return new TextReplacement { Start = replStart, Length = replLen, NewText = columns };
+        }
+
+        /// <summary>
+        /// Localiza um <c>*</c> (ou <c>alias.*</c>) no/adjacente ao caret e, quando aplicável a um
+        /// SELECT, devolve o span de substituição: <paramref name="replStart"/> (início do <c>alias</c>
+        /// ou do <c>*</c>), <paramref name="starEnd"/> (offset logo após o <c>*</c>, exclusivo) e
+        /// <paramref name="aliasOrNull"/> (o alias quando for <c>alias.*</c>, senão null). Puro;
+        /// devolve false quando não há wildcard ou ele não está num contexto SELECT, ou está dentro
+        /// de comentário/string. Compartilhado por <see cref="TryExpand"/> e pelo comando Ctrl+Espaço.
+        /// </summary>
+        public static bool TryFindWildcardAt(string text, int caretPosition,
+            out int replStart, out int starEnd, out string aliasOrNull)
+        {
+            replStart = -1;
+            starEnd = -1;
+            aliasOrNull = null;
+
+            if (string.IsNullOrEmpty(text)) return false;
+            if (caretPosition < 0 || caretPosition > text.Length) return false;
+
+            int starPos = FindStarAtCaret(text, caretPosition);
+            if (starPos < 0) return false;
+
+            // Must not be inside a comment or string
+            if (SqlContextAnalyzer.IsInsideCommentOrStringAt(text, starPos)) return false;
+            if (starPos < text.Length - 1 && SqlContextAnalyzer.IsInsideCommentOrStringAt(text, starPos + 1)) return false;
+
+            // Check if this is alias.* form
+            int aliasStart = -1;
+            int aliasEnd = -1;
+            if (starPos > 0 && text[starPos - 1] == '.')
+            {
+                int dotPos = starPos - 1;
+                int i = dotPos - 1;
+                while (i >= 0 && IsIdentChar(text[i])) i--;
+                aliasStart = i + 1;
+                aliasEnd = dotPos; // exclusive
+                if (aliasEnd <= aliasStart) return false; // ".*" sem alias
+            }
+
+            // Verify this * is in a SELECT-ish context
+            if (!IsSelectContext(text, starPos, aliasStart >= 0 ? aliasStart : starPos)) return false;
+
+            replStart = aliasStart >= 0 ? aliasStart : starPos;
+            starEnd = starPos + 1;
+            aliasOrNull = aliasStart >= 0 ? text.Substring(aliasStart, aliasEnd - aliasStart) : null;
+            return true;
+        }
+
+        /// <summary>Número de chars do início da linha de <paramref name="pos"/> até <paramref name="pos"/>
+        /// (o offset de coluna, base 0), usado como largura de indentação de continuação.</summary>
+        private static int ColumnOffsetOnLine(string text, int pos)
+        {
+            int lineStart = pos;
+            while (lineStart > 0 && text[lineStart - 1] != '\n')
+                lineStart--;
+            return pos - lineStart;
         }
 
         // ---------------------------------------------------------------
@@ -173,12 +213,14 @@ namespace SqlBeaver.Refactoring
             return null;
         }
 
-        private static string JoinColumns(IReadOnlyList<ColumnEntry> cols, string qualifier)
+        // v1: emite uma coluna por linha (trailing-comma), com as linhas de continuação
+        // prefixadas por continuationIndent para alinhar sob a primeira coluna.
+        private static string JoinColumns(IReadOnlyList<ColumnEntry> cols, string qualifier, string continuationIndent)
         {
             var sb = new StringBuilder();
             for (int i = 0; i < cols.Count; i++)
             {
-                if (i > 0) sb.Append(", ");
+                if (i > 0) { sb.Append(",\n"); sb.Append(continuationIndent); }
                 if (qualifier != null) { sb.Append(qualifier); sb.Append('.'); }
                 sb.Append(cols[i].Name);
             }
