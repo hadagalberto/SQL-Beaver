@@ -40,6 +40,13 @@ namespace SqlBeaver.Grid
         private static readonly System.Collections.Generic.List<CommandBarButton> _styleButtons =
             new System.Collections.Generic.List<CommandBarButton>();
 
+        // IA submenu
+        private static CommandBarPopup _aiPopup;
+        private static CommandBarButton _aiGenerateButton;
+        private static CommandBarButton _aiExplainButton;
+        private static CommandBarButton _aiOptimizeButton;
+        private static CommandBarButton _aiSettingsButton;
+
         // Refactor submenu
         private static CommandBarPopup _refactorPopup;
         private static CommandBarButton _expandWildcardButton;
@@ -76,7 +83,7 @@ namespace SqlBeaver.Grid
                 _queryHistoryButton   = AddButton(editorBar, "SQL Beaver: Histórico de consultas", OnQueryHistory,   beginGroup: true);
                 _recoverSessionButton = AddButton(editorBar, "SQL Beaver: Recuperar consultas…",   OnRecoverSession, beginGroup: false);
                 _environmentsButton   = AddButton(editorBar, "SQL Beaver: Ambientes (cores)…",     OnEnvironments,   beginGroup: false);
-                _insertColumnsButton  = AddButton(editorBar, "SQL Beaver: Inserir colunas…",        OnInsertColumns,  beginGroup: true);
+                _insertColumnsButton  = AddButton(editorBar, "SQL Beaver: Inserir/Selecionar colunas (substitui *)…", OnInsertColumns,  beginGroup: true);
                 _summarizeScriptButton= AddButton(editorBar, "SQL Beaver: Summarize Script…",       OnSummarizeScript, beginGroup: false);
                 _manageSnippetsButton = AddButton(editorBar, "SQL Beaver: Snippets…",               OnManageSnippets, beginGroup: false);
 
@@ -91,6 +98,18 @@ namespace SqlBeaver.Grid
 
                 // Populate dynamic style items now (and rebuild every time popup opens)
                 RebuildStyleItems(_formatStylePopup);
+
+                // IA submenu — alternativa confiável ao atalho Ctrl+K,Ctrl+A (atalhos podem
+                // não disparar no SSMS; o menu de contexto é confiável).
+                _aiPopup = (CommandBarPopup)editorBar.Controls.Add(
+                    MsoControlType.msoControlPopup, Type.Missing, Type.Missing, Type.Missing, /*temporary:*/ true);
+                _aiPopup.Caption    = "SQL Beaver: IA";
+                _aiPopup.BeginGroup = true;
+
+                _aiGenerateButton = AddButton(_aiPopup, "Gerar SQL do comentário", OnAiGenerate, beginGroup: false);
+                _aiExplainButton  = AddButton(_aiPopup, "Explicar SQL",            OnAiExplain,  beginGroup: false);
+                _aiOptimizeButton = AddButton(_aiPopup, "Otimizar SQL",            OnAiOptimize, beginGroup: false);
+                _aiSettingsButton = AddButton(_aiPopup, "IA (configuração)…",      OnAiSettings, beginGroup: true);
 
                 // Refactor submenu
                 _refactorPopup = (CommandBarPopup)editorBar.Controls.Add(
@@ -377,6 +396,66 @@ namespace SqlBeaver.Grid
             {
                 Log.Error("Inserir colunas", ex);
                 ShowStatus("falha em Inserir colunas — veja Output > SQL Beaver");
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // IA submenu handlers
+        // ---------------------------------------------------------------
+
+        private static void OnAiGenerate(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Commands.EditorCommands.AiGenerateFromComment();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("IA: gerar SQL de comentário", ex);
+                ShowStatus("falha em IA: gerar SQL — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnAiExplain(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Commands.EditorCommands.AiExplain();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("IA: explicar SQL", ex);
+                ShowStatus("falha em IA: explicar SQL — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnAiOptimize(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Commands.EditorCommands.AiOptimize();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("IA: otimizar SQL", ex);
+                ShowStatus("falha em IA: otimizar SQL — veja Output > SQL Beaver");
+            }
+        }
+
+        private static void OnAiSettings(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            try
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                Commands.EditorCommands.AiSettings();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("IA (configuração)", ex);
+                ShowStatus("falha ao abrir configuração de IA — veja Output > SQL Beaver");
             }
         }
 

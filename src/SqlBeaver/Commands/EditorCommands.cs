@@ -202,6 +202,14 @@ namespace SqlBeaver.Commands
                 string textUpToCaret = doc.StartPoint.CreateEditPoint().GetText(sel.ActivePoint);
                 int caretOffset = textUpToCaret.Length;
 
+                // Se o caret está em/ao lado de um '*' (ou 'alias.*') num SELECT, delega ao fluxo que
+                // SUBSTITUI o '*' pela lista escolhida (assim o '*' some, em vez de inserir ao lado dele).
+                if (WildcardExpander.TryFindWildcardAt(text, caretOffset, out _, out _, out _))
+                {
+                    PickColumnsForWildcard();
+                    return;
+                }
+
                 Metadata.DbMetadata metadata = GetMetadataForCommands(dte);
                 if (metadata == null) { ShowStatus("Inserir colunas: cache ainda carregando — tente novamente."); return; }
 

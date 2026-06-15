@@ -259,7 +259,11 @@ Você escolhe o provedor e fornece a sua própria chave de API.
 - **Gerar ao pressionar Enter num comentário:** ligado por padrão; desmarque para
   só gerar pelo comando/atalho explícito.
 
-**Comandos** (Tools > SQL Beaver ou clique direito no editor):
+**Comandos** (Tools > SQL Beaver ou clique direito no editor → **SQL Beaver: IA**):
+
+> ℹ️ Os comandos de IA e a seleção de colunas também ficam no menu de contexto
+> (clique direito no editor); os atalhos de teclado podem não disparar de forma
+> confiável no SSMS, então o menu é o caminho garantido.
 
 - **IA: gerar SQL de comentário** (atalho **Ctrl+K, Ctrl+A**) — posicione o cursor
   numa linha de comentário (`--` ou `/* */`) descrevendo o que você quer; o SQL

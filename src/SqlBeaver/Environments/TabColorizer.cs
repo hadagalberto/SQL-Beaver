@@ -30,6 +30,13 @@ namespace SqlBeaver.Environments
         // Diagnóstico: loga UMA vez os tipos de elemento candidatos a aba quando nenhuma aba
         // for encontrada (nomes internos do SSMS variam entre builds).
         private static bool _loggedNoTabs;
+        // Diagnóstico: loga UMA vez, na primeira vez que ABAS são encontradas, a contagem e o
+        // dump dos tipos descendentes da 1ª aba (profundidade ≤ 6) — revela qual elemento é o
+        // fundo real da aba a pintar neste build do SSMS.
+        private static bool _loggedDiag;
+        // Diagnóstico: loga UMA vez quando o alvo de pintura caiu para a própria aba (nenhum
+        // SimpleCurvedBorder/TopCurvedBorder/Border/Grid descendente bateu) — pintura pode não surtir efeito.
+        private static bool _loggedTargetFallback;
 
         // Retido para uso em RefreshAfterRulesChanged (chamado fora da inicialização)
         private static DTE2 _dte;
@@ -127,6 +134,8 @@ namespace SqlBeaver.Environments
                     return;
                 }
 
+                LogDiagOnce(tabs);
+
                 foreach (FrameworkElement tab in tabs)
                 {
                     string header = NormalizeCaption((tab as HeaderedContentControl)?.Header?.ToString());
@@ -140,8 +149,18 @@ namespace SqlBeaver.Environments
                         FindDescendantByTypeName(tab, "SimpleCurvedBorder") ??
                         FindDescendantByTypeName(tab, "TopCurvedBorder") ??
                         FindDescendantOfType<Border>(tab) ??
-                        FindDescendantOfType<System.Windows.Controls.Grid>(tab) ??
-                        tab;
+                        FindDescendantOfType<System.Windows.Controls.Grid>(tab);
+
+                    if (target == null)
+                    {
+                        // Nenhum descendente pintável bateu: cai para a própria aba (pintura pode não surtir efeito).
+                        target = tab;
+                        if (!_loggedTargetFallback)
+                        {
+                            _loggedTargetFallback = true;
+                            Log.Info("TabColorizer DIAG: alvo de pintura caiu para a raiz da aba (sem SimpleCurvedBorder/TopCurvedBorder/Border/Grid descendente) — pintura pode não surtir efeito.");
+                        }
+                    }
 
                     if (color == null)
                     {
@@ -279,6 +298,43 @@ namespace SqlBeaver.Environments
             catch (Exception ex)
             {
                 Log.Error("TabColorizer.LogTabTypeNamesOnce", ex);
+            }
+        }
+
+        /// <summary>
+        /// Diagnóstico (uma vez): na primeira vez que abas SÃO encontradas, loga a contagem e, para a
+        /// 1ª aba, os nomes de tipo dos descendentes (deduplicados, profundidade ≤ 6) — revela qual
+        /// elemento descendente é o fundo real da aba a pintar neste build do SSMS.
+        /// </summary>
+        private static void LogDiagOnce(List<FrameworkElement> tabs)
+        {
+            if (_loggedDiag) return;
+            _loggedDiag = true;
+            try
+            {
+                var names = new SortedSet<string>(StringComparer.Ordinal);
+                if (tabs.Count > 0)
+                    CollectDescendantTypeNames(tabs[0], names, 0, 6);
+                string list = names.Count > 0 ? string.Join(", ", names) : "(nenhum)";
+                Log.Info("TabColorizer DIAG: tabs=" + tabs.Count + "; primeira aba -> tipos: " + list);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("TabColorizer.LogDiagOnce", ex);
+            }
+        }
+
+        // Coleta nomes de tipo distintos dos descendentes de 'root' até 'maxDepth' (inclusive).
+        private static void CollectDescendantTypeNames(DependencyObject root, SortedSet<string> names, int depth, int maxDepth)
+        {
+            if (root == null || depth > maxDepth) return;
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                if (child is FrameworkElement fe)
+                    names.Add(fe.GetType().Name);
+                CollectDescendantTypeNames(child, names, depth + 1, maxDepth);
             }
         }
 
