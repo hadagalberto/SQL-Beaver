@@ -41,12 +41,13 @@ namespace SqlBeaver.Completion
                     if (local != null && local.Columns.Count > 0)
                         return BuildLocalTableTooltip(identifier + " → " + tr.Table, local.Columns);
 
-                    // Resolução no metadata
+                    // Resolução no metadata → script CREATE TABLE (do cache)
                     string key = ResolveTableKey(tr, metadata);
                     if (key != null && metadata.ColumnsByTable.TryGetValue(key, out IReadOnlyList<ColumnEntry> aliasCols))
                     {
-                        string aliasLabel = identifier + " → " + BuildSchemaTable(tr);
-                        return BuildTableTooltip(aliasLabel, aliasCols);
+                        string sch = tr.Schema ?? metadata.ResolveUniqueSchema(tr.Table);
+                        string header = identifier + " → " + BuildSchemaTable(tr);
+                        return BuildTableScript(sch, tr.Table, aliasCols, header);
                     }
 
                     // Alias sem colunas conhecidas: mostra ao menos "alias → Schema.Tabela"
@@ -139,7 +140,7 @@ namespace SqlBeaver.Completion
                     string tableKey = DbMetadata.TableKey(resolvedSchema, identifier);
                     string label = resolvedSchema + "." + identifier;
                     if (metadata.ColumnsByTable.TryGetValue(tableKey, out IReadOnlyList<ColumnEntry> tblCols))
-                        return BuildTableTooltip(label, tblCols);
+                        return BuildTableScript(resolvedSchema, identifier, tblCols, null);
                     return label;
                 }
             }
@@ -163,6 +164,20 @@ namespace SqlBeaver.Completion
         // -----------------------------------------------------------------------
         // Helpers de formatação
         // -----------------------------------------------------------------------
+
+        /// <summary>Tabela real → script CREATE TABLE do cache (igual ao "Ir para definição").
+        /// Sem schema/colunas, cai no tooltip compacto.</summary>
+        private static string BuildTableScript(string schema, string table,
+            IReadOnlyList<ColumnEntry> cols, string headerOrNull)
+        {
+            if (string.IsNullOrEmpty(schema) || cols == null || cols.Count == 0)
+            {
+                string lbl = headerOrNull ?? (schema != null ? schema + "." + table : table);
+                return BuildTableTooltip(lbl, cols ?? Array.Empty<ColumnEntry>());
+            }
+            string script = SqlBeaver.Scripting.TableScriptBuilder.Build(schema, table, cols);
+            return headerOrNull == null ? script : "-- " + headerOrNull + "\r\n" + script;
+        }
 
         private static string BuildTableTooltip(string label, IReadOnlyList<ColumnEntry> columns)
         {

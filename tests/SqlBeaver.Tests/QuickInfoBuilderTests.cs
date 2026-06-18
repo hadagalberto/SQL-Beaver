@@ -59,9 +59,10 @@ namespace SqlBeaver.Tests
 
             Assert.NotNull(result);
             Assert.Contains("c →", result);
+            Assert.Contains("CREATE TABLE", result);
             Assert.Contains("Clientes", result);
             Assert.Contains("IdCliente", result);
-            Assert.Contains("[PK]", result);
+            Assert.Contains("PRIMARY KEY", result);
         }
 
         // -----------------------------------------------------------------------
@@ -150,7 +151,8 @@ namespace SqlBeaver.Tests
             string result = QuickInfoBuilder.Build("Clientes", null, EmptyScope, md, NoLocals);
 
             Assert.NotNull(result);
-            Assert.Contains("dbo.Clientes", result);
+            Assert.Contains("CREATE TABLE", result);
+            Assert.Contains("Clientes", result);
             Assert.Contains("IdCliente", result);
         }
 
@@ -183,11 +185,11 @@ namespace SqlBeaver.Tests
         }
 
         // -----------------------------------------------------------------------
-        // 7. Mais de 20 colunas → mostra "+N coluna(s)"
+        // 7. Tabela com muitas colunas → script CREATE TABLE lista TODAS (sem cap)
         // -----------------------------------------------------------------------
 
         [Fact]
-        public void MoreThan20Columns_ShowsOverflowLine()
+        public void ManyColumns_ScriptListsAll()
         {
             var columns = new List<MetadataAssembler.ColumnRow>();
             for (int i = 1; i <= 25; i++)
@@ -198,9 +200,8 @@ namespace SqlBeaver.Tests
             string result = QuickInfoBuilder.Build("Clientes", null, EmptyScope, md, NoLocals);
 
             Assert.NotNull(result);
-            Assert.Contains("+5 coluna(s)", result);
-            // Col21 must NOT appear as its own line (it's in the overflow)
-            Assert.DoesNotContain("Col21", result);
+            Assert.Contains("CREATE TABLE", result);
+            Assert.Contains("Col25", result);   // todas as colunas no script, sem corte
         }
 
         // -----------------------------------------------------------------------
