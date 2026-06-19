@@ -84,8 +84,12 @@ namespace SqlBeaver.Analysis
             if (hasWhitespaceGap && IsAny(previousWord, FromKeywords))
             {
                 // FROM #t, UPDATE @t, INTO #t → AfterFromJoin (intencional v5 C2)
-                return new SqlContext(SqlContextKind.AfterFromJoin, null, partial, partialStart,
-                    previousWord.ToUpperInvariant());
+                string trigger = previousWord.ToUpperInvariant();
+                // DELETE FROM tabela: NÃO inserir alias automático ("DELETE FROM t alias" é erro de
+                // sintaxe). Troca o gatilho para "DELETE" para o completion suprimir o alias.
+                if (trigger == "FROM" && PrecedingWordIsDelete(text, start, i))
+                    trigger = "DELETE";
+                return new SqlContext(SqlContextKind.AfterFromJoin, null, partial, partialStart, trigger);
             }
 
             if (hasWhitespaceGap && string.Equals(previousWord, "JOIN", StringComparison.OrdinalIgnoreCase))
@@ -135,6 +139,19 @@ namespace SqlBeaver.Analysis
             }
 
             return FreeIdentifierOrNone(partial, partialStart);
+        }
+
+        /// <summary>A palavra imediatamente antes da posição <paramref name="i"/> é "DELETE"?
+        /// (i aponta para o char anterior à keyword FROM já consumida.)</summary>
+        private static bool PrecedingWordIsDelete(string text, int start, int i)
+        {
+            int j = i;
+            while (j >= start && char.IsWhiteSpace(text[j])) j--;
+            int end = j + 1;
+            while (j >= start && IsIdentifierChar(text[j])) j--;
+            if (end <= j + 1) return false;
+            string w = text.Substring(j + 1, end - (j + 1));
+            return string.Equals(w, "DELETE", StringComparison.OrdinalIgnoreCase);
         }
 
         private static SqlContext FreeIdentifierOrNone(string partial, int partialStart)

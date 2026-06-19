@@ -385,6 +385,26 @@ namespace SqlBeaver.Tests
             Assert.Equal(keyword, ctx.TriggerKeyword);
         }
 
+        // ---- DELETE FROM: gatilho "DELETE" (sem alias automático; alias quebra a sintaxe) ----
+
+        [Theory]
+        [InlineData("DELETE FROM ")]
+        [InlineData("DELETE FROM Ped")]
+        [InlineData("delete from Pess")]
+        public void DeleteFrom_TriggerIsDelete_NoAlias(string text)
+        {
+            var ctx = Analyze(text);
+            Assert.Equal(SqlContextKind.AfterFromJoin, ctx.Kind);
+            Assert.Equal("DELETE", ctx.TriggerKeyword);
+        }
+
+        [Fact]
+        public void SelectFrom_TriggerStaysFrom()
+        {
+            var ctx = Analyze("SELECT * FROM Ped");
+            Assert.Equal("FROM", ctx.TriggerKeyword);  // SELECT segue com alias automático
+        }
+
         // ---- vírgula em lista de FROM: contexto de TABELA, não de coluna ----
 
         [Theory]
