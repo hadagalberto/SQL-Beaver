@@ -18,7 +18,7 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Test (xUnit, net48)
-        run: dotnet test SqlBeaver.slnx --configuration Release --nologo
+        run: dotnet test SqlBeaver.slnx --configuration Release --nologo --blame-hang-timeout 120s --blame-hang-dump-type none
 
       - name: Build VSIX (MSBuild completo)
         run: msbuild SqlBeaver.slnx /p:Configuration=Release /t:Rebuild /restore /v:m

@@ -19,7 +19,7 @@ jobs:
         run: dotnet restore SqlBeaver.slnx
 
       - name: Test (xUnit, net48)
-        run: dotnet test SqlBeaver.slnx --configuration Release --nologo
+        run: dotnet test SqlBeaver.slnx --configuration Release --nologo --blame-hang-timeout 120s --blame-hang-dump-type none
 
       # VSCT/VSIX só compilam no MSBuild completo (gate IsFullMsBuild).
       - name: Build VSIX (MSBuild completo)
