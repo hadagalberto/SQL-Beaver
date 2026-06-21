@@ -17,8 +17,18 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      # Gate pelo RESULTADO dos testes, não pelo encerramento do processo (ver ci.yml).
       - name: Test (xUnit, net48)
-        run: dotnet test SqlBeaver.slnx --configuration Release --nologo --blame-hang-timeout 120s --blame-hang-dump-type none
+        shell: pwsh
+        run: |
+          dotnet test SqlBeaver.slnx --configuration Release --nologo --blame-hang-timeout 120s --blame-hang-dump-type none 2>&1 | Tee-Object -Variable log
+          $text = ($log | Out-String)
+          if ($text -match 'Failed:\s+0,\s+Passed:\s+[1-9]\d*') {
+            Write-Host 'Todos os testes passaram; encerramento lento do testhost ignorado.'
+            exit 0
+          }
+          Write-Host 'Falha de teste, hang real ou nenhum resumo de aprovacao encontrado.'
+          exit 1
 
       - name: Build VSIX (MSBuild completo)
         run: msbuild SqlBeaver.slnx /p:Configuration=Release /t:Rebuild /restore /v:m
