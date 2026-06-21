@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # criar release + anexar o .vsix (usa GITHUB_TOKEN; nenhum segredo manual)
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Test (xUnit, net48)
+        run: dotnet test SqlBeaver.slnx --configuration Release --nologo
+
+      - name: Build VSIX (MSBuild completo)
+        run: msbuild SqlBeaver.slnx /p:Configuration=Release /t:Rebuild /restore /v:m
+
+      - name: Stage versioned VSIX
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          Copy-Item dist/SqlBeaver.vsix "SqlBeaver-$v.vsix"
+          Write-Host "Empacotado SqlBeaver-$v.vsix"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SqlBeaver-*.vsix
+          generate_release_notes: true
+          body: |
+            Extensão SQL Beaver para SSMS 22 (amd64). Instale com duplo clique no `.vsix`
+            e **desative o IntelliSense nativo** (Tools > Options > Text Editor > Transact-SQL >
+            IntelliSense). VSIX não assinado — o instalador mostra aviso de publisher não verificado.
