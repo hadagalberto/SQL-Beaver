@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json.schemastore.org/vsix-publish",
+  "categories": [ "coding" ],
+  "identity": {
+    "internalName": "SqlBeaver",
+    "publisher": "REPLACE_ME"
+  },
+  "overview": "README.md",
+  "priceCategory": "free",
+  "publicRepository": "https://github.com/hadagalberto/SQL-Beaver",
+  "repositoryType": "git"
+}

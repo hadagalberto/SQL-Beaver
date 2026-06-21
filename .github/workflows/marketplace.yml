@@ -1,0 +1,67 @@
+name: Publish to VS Marketplace
+
+# Publica o VSIX no Visual Studio Marketplace.
+# Roda na tag v* e também manualmente (workflow_dispatch).
+# Requer (configurados por você no GitHub):
+#   - Secret  VS_MARKETPLACE_PAT   -> PAT do Azure DevOps, escopo Marketplace > Publish
+#   - Variable MARKETPLACE_PUBLISHER -> seu publisher ID do Marketplace
+# Sem o secret, o job PULA tudo (não falha) — assim a Release nunca é bloqueada.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  marketplace:
+    runs-on: windows-2022
+    steps:
+      - name: Gate (só publica se houver PAT)
+        id: gate
+        shell: pwsh
+        env:
+          PAT: ${{ secrets.VS_MARKETPLACE_PAT }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:PAT)) {
+            Write-Host 'VS_MARKETPLACE_PAT ausente — pulando publicação no Marketplace.'
+            "skip=true" | Out-File -Append $env:GITHUB_OUTPUT
+          } else {
+            "skip=false" | Out-File -Append $env:GITHUB_OUTPUT
+          }
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.skip == 'false'
+
+      - name: Setup MSBuild
+        if: steps.gate.outputs.skip == 'false'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build VSIX (MSBuild completo)
+        if: steps.gate.outputs.skip == 'false'
+        run: msbuild SqlBeaver.slnx /p:Configuration=Release /t:Rebuild /restore /v:m
+
+      - name: Injeta publisher no manifesto de publicação
+        if: steps.gate.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          $pub = "${{ vars.MARKETPLACE_PUBLISHER }}"
+          if ([string]::IsNullOrEmpty($pub)) {
+            Write-Error 'Defina a variável de repositório MARKETPLACE_PUBLISHER (Settings > Variables).'
+            exit 1
+          }
+          (Get-Content publishManifest.json) -replace 'REPLACE_ME', $pub | Set-Content publishManifest.json
+          Write-Host "Publisher: $pub"
+
+      - name: Publica no Marketplace
+        if: steps.gate.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          PAT: ${{ secrets.VS_MARKETPLACE_PAT }}
+        run: |
+          $vsix = Get-ChildItem dist\SqlBeaver*.vsix | Select-Object -First 1
+          if (-not $vsix) { Write-Error 'VSIX não encontrado em dist\'; exit 1 }
+          $pub = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022' -Recurse -Filter VsixPublisher.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $pub) { Write-Error 'VsixPublisher.exe não encontrado no runner.'; exit 1 }
+          Write-Host "VsixPublisher: $($pub.FullName)"
+          & $pub.FullName publish -payload $vsix.FullName -publishManifest publishManifest.json -personalAccessToken $env:PAT

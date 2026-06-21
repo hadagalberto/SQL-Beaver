@@ -52,6 +52,16 @@
     <InternalsVisibleTo Include="SqlBeaver.Tests" />
   </ItemGroup>
 
+  <!-- Assets do Marketplace: ícone e licença empacotados no VSIX (referenciados no manifesto). -->
+  <ItemGroup>
+    <Content Include="icon.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="License.txt">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+
   <!-- O .vsix em bin\ é apagado pelo IncrementalClean de builds `dotnet` (que não
        produzem VSIX). Cópia estável em dist\ (gitignored) para instalação/deploy. -->
   <Target Name="CopyVsixToDist" AfterTargets="CreateVsixContainer" Condition="'$(IsFullMsBuild)' == 'true'">

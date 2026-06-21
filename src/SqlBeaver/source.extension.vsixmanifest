@@ -4,6 +4,10 @@
     <Identity Id="SqlBeaver.E7F4C9D2-3B61-4A8E-9C57-D2A41B6F8E03" Version="1.9.0" Language="en-US" Publisher="Hadagalberto" />
     <DisplayName>SQL Beaver</DisplayName>
     <Description>Produtividade T-SQL para o SSMS 22: autocomplete (tabelas/colunas/JOIN por FK, #temp/@tabela/CTE, EXEC, palavras-chave), executar statement atual, QuickInfo no hover, snippets navegáveis, Format Document com estilos nomeados, lint ao vivo (20 regras), geração de código (Script as / CRUD), refatoração (inline EXEC, encapsular, casing), assistência por IA opcional (gerar SQL de comentário, explicar/otimizar — Anthropic/OpenAI/Gemini, chave do usuário), cores por ambiente, navegação, restauração de sessão e ranking por uso.</Description>
+    <MoreInfo>https://github.com/hadagalberto/SQL-Beaver</MoreInfo>
+    <License>License.txt</License>
+    <Icon>icon.png</Icon>
+    <Tags>SQL;SSMS;T-SQL;TSQL;autocomplete;IntelliSense;SQL Server;produtividade;completion;lint;refatoração;IA;AI</Tags>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[22.0,)">
