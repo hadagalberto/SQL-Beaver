@@ -275,6 +275,12 @@ namespace SqlBeaver.Tests
 
             Assert.Null(cache.TryGet("srv1", "db", Req()));
             Assert.Null(cache.TryGet("srv2", "db", Req()));
+
+            // Completa as cargas pendentes e as drena: um TCS deixado pendente mantém
+            // tasks de background vivas e impede o testhost de encerrar (trava o CI).
+            blocked.TrySetResult(SampleMetadata());
+            await cache.GetPendingLoadForTestAsync("srv1", "db");
+            await cache.GetPendingLoadForTestAsync("srv2", "db");
         }
     }
 }
