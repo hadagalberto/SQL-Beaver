@@ -37,6 +37,10 @@ namespace SqlBeaver.Environments
         // Diagnóstico: loga UMA vez quando o alvo de pintura caiu para a própria aba (nenhum
         // SimpleCurvedBorder/TopCurvedBorder/Border/Grid descendente bateu) — pintura pode não surtir efeito.
         private static bool _loggedTargetFallback;
+        // Diagnóstico: loga UMA vez, na primeira execução de ReapplyAll, o estado da raiz WPF
+        // (Application.Current / MainWindow / nº de janelas). Revela quando a varredura sequer
+        // começa porque não há janela raiz acessível neste host do SSMS.
+        private static bool _loggedEntry;
 
         // Retido para uso em RefreshAfterRulesChanged (chamado fora da inicialização)
         private static DTE2 _dte;
@@ -107,7 +111,26 @@ namespace SqlBeaver.Environments
         {
             try
             {
-                var mainWindow = Application.Current?.MainWindow;
+                Application app = Application.Current;
+                FrameworkElement mainWindow = app?.MainWindow;
+                // Fallback: alguns hosts do SSMS não setam MainWindow; usa a 1ª janela aberta.
+                if (mainWindow == null && app != null)
+                {
+                    foreach (System.Windows.Window w in app.Windows)
+                        if (w != null) { mainWindow = w; break; }
+                }
+
+                if (!_loggedEntry)
+                {
+                    _loggedEntry = true;
+                    int winCount = -1;
+                    try { winCount = app?.Windows?.Count ?? -1; } catch { }
+                    Log.Info("TabColorizer DIAG entrada: Application.Current=" + (app != null)
+                        + ", MainWindow=" + (app?.MainWindow != null)
+                        + ", janelas=" + winCount
+                        + ", raiz usada=" + (mainWindow != null));
+                }
+
                 if (mainWindow == null) return;
 
                 var tabs = new List<FrameworkElement>();

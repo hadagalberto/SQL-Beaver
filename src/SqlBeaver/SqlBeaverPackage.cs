@@ -25,7 +25,8 @@ namespace SqlBeaver
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-            Log.Info("SQL Beaver inicializado.");
+            var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            Log.Info("SQL Beaver inicializado (v" + asmVer + ").");
             Grid.GridCommandBarMenu.Initialize();
             Grid.EditorCommandBarMenu.Initialize();
             Guard.ExecuteGuard.Initialize();
