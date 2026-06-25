@@ -41,6 +41,9 @@ namespace SqlBeaver.Environments
         // (Application.Current / MainWindow / nº de janelas). Revela quando a varredura sequer
         // começa porque não há janela raiz acessível neste host do SSMS.
         private static bool _loggedEntry;
+        // Diagnóstico: quantos dumps amplos de tipos ainda podem ser logados. Re-armado a cada
+        // execução enquanto > 0 — captura a árvore em momentos diferentes (abas materializam tarde).
+        private static int _diagDumpsLeft = 4;
 
         // Retido para uso em RefreshAfterRulesChanged (chamado fora da inicialização)
         private static DTE2 _dte;
@@ -102,7 +105,7 @@ namespace SqlBeaver.Environments
 
         private static void ScheduleReapply()
         {
-            _reapplyTicksLeft = 4;
+            _reapplyTicksLeft = 20; // ~3s: dá tempo das abas de documento materializarem na árvore visual
             if (_reapplyTimer != null && !_reapplyTimer.IsEnabled)
                 _reapplyTimer.Start();
         }
@@ -133,27 +136,32 @@ namespace SqlBeaver.Environments
 
                 if (mainWindow == null) return;
 
+                // Varre TODAS as janelas WPF (a aba de documento pode estar numa janela
+                // diferente da MainWindow — ex.: documento desacoplado, ou janela secundária).
+                var roots = new List<FrameworkElement> { mainWindow };
+                if (app != null)
+                    foreach (System.Windows.Window w in app.Windows)
+                        if (w != null && !roots.Contains(w)) roots.Add(w);
+
                 var tabs = new List<FrameworkElement>();
-                CollectByTypeName(mainWindow, "DocumentTabItem", tabs, 0);
+                foreach (FrameworkElement root in roots)
+                    CollectByTypeName(root, "DocumentTabItem", tabs, 0);
                 if (tabs.Count == 0)
-                {
-                    var groups = new List<FrameworkElement>();
-                    CollectByTypeName(mainWindow, "DocumentGroupControl", groups, 0);
-                    foreach (FrameworkElement group in groups)
-                        CollectByTypeName(group, "DragUndockHeader", tabs, 0);
-                }
-                // Fallbacks adicionais: builds do SSMS 22 podem usar outros nomes de tipo
-                // para a aba. Tenta candidatos conhecidos e qualquer tipo terminado em "TabItem".
+                    foreach (FrameworkElement root in roots)
+                    {
+                        var groups = new List<FrameworkElement>();
+                        CollectByTypeName(root, "DocumentGroupControl", groups, 0);
+                        foreach (FrameworkElement group in groups)
+                            CollectByTypeName(group, "DragUndockHeader", tabs, 0);
+                    }
+                // Fallback: qualquer tipo terminado em "TabItem" em qualquer janela.
                 if (tabs.Count == 0)
-                {
-                    CollectByTypeName(mainWindow, "TitleBarButton", tabs, 0);
-                    CollectByTypeName(mainWindow, "DragUndockHeader", tabs, 0);
-                    CollectBySuffix(mainWindow, "TabItem", tabs, 0);
-                }
+                    foreach (FrameworkElement root in roots)
+                        CollectBySuffix(root, "TabItem", tabs, 0);
 
                 if (tabs.Count == 0)
                 {
-                    LogTabTypeNamesOnce(mainWindow);
+                    LogTabTypeNamesBroad(roots);
                     return;
                 }
 
@@ -300,6 +308,61 @@ namespace SqlBeaver.Environments
                 if (found != null) return found;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Diagnóstico re-armado (até <see cref="_diagDumpsLeft"/> vezes): quando nenhuma aba é
+        /// encontrada, varre TODAS as janelas e loga os nomes de tipo distintos cujo nome contém
+        /// Tab/Doc/Pane/Well/Frame/Group/Header/Title (sem filtrar só "Tab" — o tipo real da aba
+        /// no shell do SSMS 22 pode não ter "Tab" no nome). Re-armado porque as abas de documento
+        /// só entram na árvore visual algum tempo após a criação da janela.
+        /// </summary>
+        private static void LogTabTypeNamesBroad(List<FrameworkElement> roots)
+        {
+            if (_diagDumpsLeft <= 0) return;
+            _diagDumpsLeft--;
+            try
+            {
+                var names = new SortedSet<string>(StringComparer.Ordinal);
+                int total = 0;
+                foreach (FrameworkElement root in roots)
+                    total += CollectBroadCandidateTypeNames(root, names, 0);
+                string list = names.Count > 0 ? string.Join(", ", names) : "(nenhum)";
+                Log.Info("TabColorizer DIAG amplo (" + roots.Count + " janela(s), " + total
+                    + " FE varridos): " + list);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("TabColorizer.LogTabTypeNamesBroad", ex);
+            }
+        }
+
+        // Coleta nomes de tipo distintos (palavras-chave amplas) e retorna o total de FE visitados.
+        private static int CollectBroadCandidateTypeNames(DependencyObject root, SortedSet<string> names, int depth)
+        {
+            if (root == null || depth > 40) return 0;
+            int visited = 0;
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                if (child is FrameworkElement fe)
+                {
+                    visited++;
+                    string n = fe.GetType().Name;
+                    if (n.IndexOf("Tab", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("Doc", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("Pane", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("Well", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("Frame", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("Group", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("Header", StringComparison.Ordinal) >= 0 ||
+                        n.IndexOf("Title", StringComparison.Ordinal) >= 0)
+                        names.Add(n);
+                }
+                visited += CollectBroadCandidateTypeNames(child, names, depth + 1);
+            }
+            return visited;
         }
 
         /// <summary>

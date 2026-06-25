@@ -87,6 +87,10 @@ namespace SqlBeaver.Connection
                 LiveConnectionInfo live = GetLiveConnectionInfo();
                 if (live == null)
                 {
+                    // Conexão viva indisponível (timing/foco em janela restaurada/nova): reaproveita
+                    // a última conexão Entra boa do mesmo servidor em vez de matar as sugestões.
+                    ActiveConnection reused = ReuseLastGoodEntra(server, database);
+                    if (reused != null) return reused;
                     LogEntraWithoutTokenOnce();
                     return null; // degrada em silêncio: melhor sem sugestões que spam de erro 40607
                 }
@@ -118,6 +122,7 @@ namespace SqlBeaver.Connection
                         Log.Info($"Conexão Entra resolvida: servidor={server}, database={database} (via conexão viva: db={live.Database ?? "-"}).");
                     }
 
+                    StoreGoodEntra(server, live.AccessToken, null, null);
                     return new ActiveConnection
                     {
                         Server = server,
@@ -141,6 +146,7 @@ namespace SqlBeaver.Connection
                         Log.Info($"Conexão Entra resolvida via provider clonado: servidor={server}, database={database}, tipo={live.ConnectionType?.FullName ?? "-"}.");
                     }
 
+                    StoreGoodEntra(server, null, live.ConnectionString, live.ConnectionType);
                     return new ActiveConnection
                     {
                         Server = server,
@@ -150,6 +156,8 @@ namespace SqlBeaver.Connection
                     };
                 }
 
+                ActiveConnection reusedNoToken = ReuseLastGoodEntra(server, database);
+                if (reusedNoToken != null) return reusedNoToken;
                 LogEntraWithoutTokenOnce();
                 return null;
             }
@@ -340,6 +348,73 @@ namespace SqlBeaver.Connection
         private static bool _loggedEntraWithoutToken;
         private static bool _loggedEntraResolved;
         private static bool _loggedLiveConnectionShape;
+        private static bool _loggedEntraReused;
+
+        // Última conexão Entra resolvida com sucesso, para reaproveitar quando a conexão viva
+        // (GetCurrentConnection) voltar null transitoriamente — janela restaurada/nova via
+        // ScriptFactory perde o "current" por timing/foco, matando as sugestões sem motivo.
+        private static string _lastGoodServer;
+        private static string _lastGoodToken;        // modo (b): token Entra
+        private static string _lastGoodConnString;   // modo (c): connection string do provider vivo
+        private static Type   _lastGoodProviderType;
+
+        private static void StoreGoodEntra(string server, string token, string connString, Type providerType)
+        {
+            _lastGoodServer       = server;
+            _lastGoodToken        = token;
+            _lastGoodConnString   = connString;
+            _lastGoodProviderType = providerType;
+        }
+
+        // Reconstrói uma ActiveConnection a partir do último Entra bom, se o servidor bater.
+        // O banco vem do parâmetro (UIConnectionInfo da janela atual — sempre legível).
+        private static ActiveConnection ReuseLastGoodEntra(string server, string database)
+        {
+            if (string.IsNullOrEmpty(_lastGoodServer) ||
+                !string.Equals(_lastGoodServer, server, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (!_loggedEntraReused)
+            {
+                _loggedEntraReused = true;
+                Log.Info($"Conexão Entra reusada do cache (conexão viva indisponível): servidor={server}, database={database}.");
+            }
+
+            if (!string.IsNullOrEmpty(_lastGoodToken))
+            {
+                var b = new SqlConnectionStringBuilder
+                {
+                    DataSource = server,
+                    InitialCatalog = database,
+                    ApplicationName = "SQL Beaver",
+                    ConnectTimeout = 10,
+                    Encrypt = true,
+                };
+                return new ActiveConnection
+                {
+                    Server = server,
+                    Database = database,
+                    ConnectionString = b.ConnectionString,
+                    AccessToken = _lastGoodToken,
+                };
+            }
+
+            if (!string.IsNullOrEmpty(_lastGoodConnString))
+            {
+                var cs = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = _lastGoodConnString };
+                cs["Initial Catalog"] = database;
+                cs["Application Name"] = "SQL Beaver";
+                return new ActiveConnection
+                {
+                    Server = server,
+                    Database = database,
+                    ConnectionString = cs.ConnectionString,
+                    ProviderConnectionType = _lastGoodProviderType,
+                };
+            }
+
+            return null;
+        }
 
         // UPN sem senha (Entra MFA) ou dica explícita no tipo de autenticação.
         private static bool LooksLikeEntra(string userName, string password, string authenticationType)
