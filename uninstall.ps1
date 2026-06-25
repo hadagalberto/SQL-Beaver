@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-  Remove o SQL Beaver do SSMS 22 (todas as pastas de extensão), limpa o cache MEF
-  e re-mescla a configuração do shell. Feche o SSMS antes.
+  Remove o SQL Beaver do SSMS (qualquer versão/instância/caminho), limpa o cache MEF
+  e re-mescla a configuração do shell. Feche o SSMS antes. Não depende de hash de
+  instância nem de caminho fixo — descobre tudo em tempo de execução.
 
   -PurgeData : também apaga os dados do usuário em %LOCALAPPDATA%\SqlBeaver
                (snippets/environments/format/lint, histórico, sessões, ranking de uso).
@@ -11,18 +12,64 @@ param([switch]$PurgeData)
 
 $ErrorActionPreference = "Stop"
 
-$ssmsIde   = "C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE"
-$ssmsLocal = "$env:LOCALAPPDATA\Microsoft\SSMS\22.0_cd5e6ef6"
-
 if (Get-Process -Name "Ssms" -ErrorAction SilentlyContinue) {
     throw "Feche o SSMS antes de desinstalar."
 }
 
-# 1) localizar e remover TODAS as pastas de extensão que contenham o SqlBeaver.dll
+# ---------------------------------------------------------------------------
+# 1) Descobrir as pastas de DADOS locais do SSMS: %LOCALAPPDATA%\Microsoft\SSMS\<ver>_<hash>
+#    (uma por versão/instância; o hash varia por máquina — nunca hardcodar).
+# ---------------------------------------------------------------------------
+$ssmsBase   = Join-Path $env:LOCALAPPDATA "Microsoft\SSMS"
+$localRoots = @()
+if (Test-Path $ssmsBase) {
+    $localRoots = Get-ChildItem $ssmsBase -Directory -ErrorAction SilentlyContinue |
+                  Select-Object -ExpandProperty FullName
+}
+
+# ---------------------------------------------------------------------------
+# 2) Descobrir as INSTALAÇÕES do SSMS (Ssms.exe) — qualquer drive/edição/versão.
+#    Fontes: Program Files (x64 + x86) e o registro App Paths.
+# ---------------------------------------------------------------------------
+$ideDirs = @()
+
+$progRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ } | Select-Object -Unique
+foreach ($pr in $progRoots) {
+    $glob = Join-Path $pr "Microsoft SQL Server Management Studio*"
+    Get-ChildItem $glob -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-ChildItem -Path $_.FullName -Recurse -Filter "Ssms.exe" -ErrorAction SilentlyContinue |
+            ForEach-Object { $ideDirs += $_.DirectoryName }
+    }
+}
+
+# Registro: App Paths\Ssms.exe (cobre instalações fora do Program Files padrão)
+foreach ($hive in @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Ssms.exe",
+                     "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\Ssms.exe")) {
+    try {
+        $exe = (Get-ItemProperty -Path $hive -ErrorAction Stop).'(default)'
+        if ($exe -and (Test-Path $exe)) { $ideDirs += (Split-Path $exe -Parent) }
+    } catch { }
+}
+
+$ideDirs = $ideDirs | Select-Object -Unique
+
+# ---------------------------------------------------------------------------
+# 3) Pastas de extensão candidatas: <localRoot>\Extensions e <ideDir>\Extensions
+# ---------------------------------------------------------------------------
+$extRoots = @()
+foreach ($lr in $localRoots) { $extRoots += (Join-Path $lr "Extensions") }
+foreach ($id in $ideDirs)    { $extRoots += (Join-Path $id "Extensions") }
+$extRoots = $extRoots | Select-Object -Unique | Where-Object { Test-Path $_ }
+
+# ---------------------------------------------------------------------------
+# 4) Remover TODAS as pastas de extensão que contenham o SqlBeaver.dll
+# ---------------------------------------------------------------------------
 $dirs = @(
-    Get-ChildItem -Recurse -Filter "SqlBeaver.dll" "$ssmsLocal\Extensions" -ErrorAction SilentlyContinue
-    Get-ChildItem -Recurse -Filter "SqlBeaver.dll" "$ssmsIde\Extensions"   -ErrorAction SilentlyContinue
-) | ForEach-Object { $_.Directory.FullName } | Select-Object -Unique
+    foreach ($er in $extRoots) {
+        Get-ChildItem -Recurse -Filter "SqlBeaver.dll" $er -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Directory.FullName }
+    }
+) | Select-Object -Unique
 
 if (-not $dirs) {
     Write-Host "Nenhuma instalação do SQL Beaver encontrada."
@@ -32,37 +79,48 @@ if (-not $dirs) {
             Remove-Item $dir -Recurse -Force
             Write-Host "Removido: $dir"
         } catch {
-            Write-Warning "Sem acesso a $dir (rode elevado se for a pasta em Program Files)."
+            Write-Warning "Sem acesso a $dir (rode elevado se for pasta em Program Files)."
         }
     }
 }
 
-# 2) limpar o cache MEF
-$mefCache = Join-Path $ssmsLocal "ComponentModelCache"
-if (Test-Path $mefCache) {
-    Remove-Item $mefCache -Recurse -Force
-    Write-Host "Cache MEF limpo."
+# ---------------------------------------------------------------------------
+# 5) Limpar o cache MEF de cada instância
+# ---------------------------------------------------------------------------
+foreach ($lr in $localRoots) {
+    $mefCache = Join-Path $lr "ComponentModelCache"
+    if (Test-Path $mefCache) {
+        try { Remove-Item $mefCache -Recurse -Force; Write-Host "Cache MEF limpo: $mefCache" }
+        catch { Write-Warning "Sem acesso ao cache MEF: $mefCache" }
+    }
 }
 
-# 3) invalidar + re-mesclar a configuração do shell (some o menu/toolbar do SSMS)
-foreach ($extRoot in @("$ssmsLocal\Extensions", "$ssmsIde\Extensions")) {
+# ---------------------------------------------------------------------------
+# 6) Invalidar + re-mesclar a configuração do shell (some o menu/toolbar)
+# ---------------------------------------------------------------------------
+foreach ($extRoot in $extRoots) {
     try {
-        if (Test-Path $extRoot) {
-            $marker = Join-Path $extRoot "extensions.configurationchanged"
-            if (-not (Test-Path $marker)) { New-Item -ItemType File -Path $marker -Force | Out-Null }
-            (Get-Item $marker).LastWriteTime = Get-Date
-        }
+        $marker = Join-Path $extRoot "extensions.configurationchanged"
+        if (-not (Test-Path $marker)) { New-Item -ItemType File -Path $marker -Force | Out-Null }
+        (Get-Item $marker).LastWriteTime = Get-Date
     } catch { Write-Warning "Sem acesso a $extRoot." }
 }
-try {
-    $merge = Start-Process (Join-Path $ssmsIde "SSMS.exe") -ArgumentList "/updateconfiguration" -PassThru -WindowStyle Hidden
-    if (-not $merge.WaitForExit(120000)) { $merge.Kill() }
-    Write-Host "Configuração do shell re-mesclada."
-} catch {
-    Write-Warning "Não foi possível re-mesclar a configuração; abra o SSMS uma vez para o menu sumir."
+
+foreach ($id in $ideDirs) {
+    $exe = Join-Path $id "Ssms.exe"
+    if (-not (Test-Path $exe)) { continue }
+    try {
+        $merge = Start-Process $exe -ArgumentList "/updateconfiguration" -PassThru -WindowStyle Hidden
+        if (-not $merge.WaitForExit(120000)) { $merge.Kill() }
+        Write-Host "Configuração do shell re-mesclada ($id)."
+    } catch {
+        Write-Warning "Não foi possível re-mesclar em $id; abra o SSMS uma vez para o menu sumir."
+    }
 }
 
-# 4) dados do usuário (opcional)
+# ---------------------------------------------------------------------------
+# 7) Dados do usuário (opcional) — universal, sempre em %LOCALAPPDATA%\SqlBeaver
+# ---------------------------------------------------------------------------
 $dataDir = "$env:LOCALAPPDATA\SqlBeaver"
 if ($PurgeData) {
     if (Test-Path $dataDir) {
