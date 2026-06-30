@@ -252,7 +252,7 @@ namespace SqlBeaver.Environments
 
         private static void CollectByTypeName(DependencyObject root, string typeName, List<FrameworkElement> result, int depth)
         {
-            if (root == null || depth > 30) return;
+            if (root == null || depth > 60) return;
             int count = VisualTreeHelper.GetChildrenCount(root);
             for (int i = 0; i < count; i++)
             {
@@ -273,7 +273,7 @@ namespace SqlBeaver.Environments
         // Coleta FrameworkElements cujo nome de tipo termina com 'suffix' (ex.: "TabItem").
         private static void CollectBySuffix(DependencyObject root, string suffix, List<FrameworkElement> result, int depth)
         {
-            if (root == null || depth > 30) return;
+            if (root == null || depth > 60) return;
             int count = VisualTreeHelper.GetChildrenCount(root);
             for (int i = 0; i < count; i++)
             {
@@ -290,7 +290,7 @@ namespace SqlBeaver.Environments
 
         private static FrameworkElement FindDescendantOfType<T>(DependencyObject root, int depth) where T : FrameworkElement
         {
-            if (root == null || depth > 30) return null;
+            if (root == null || depth > 60) return null;
             int count = VisualTreeHelper.GetChildrenCount(root);
             for (int i = 0; i < count; i++)
             {
