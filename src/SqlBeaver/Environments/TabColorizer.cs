@@ -26,6 +26,10 @@ namespace SqlBeaver.Environments
         private static int _reapplyTicksLeft;
         private static readonly Dictionary<string, Color?> _colorsByCaption =
             new Dictionary<string, Color?>(StringComparer.OrdinalIgnoreCase);
+        // Cor do ambiente da conexão ATIVA. O texto da aba vem truncado ("SQLQuery2.sq...")
+        // e não casa com a legenda completa da janela, então pintamos as abas com esta cor
+        // (igual à barra de ambiente) em vez de casar por legenda.
+        private static Color? _activeColor;
         private static bool _loggedWalkFailure;
         // Diagnóstico: loga UMA vez os tipos de elemento candidatos a aba quando nenhuma aba
         // for encontrada (nomes internos do SSMS variam entre builds).
@@ -95,7 +99,9 @@ namespace SqlBeaver.Environments
                     ? null
                     : EnvironmentStore.MatchActive(connection.Server, connection.Database);
 
-                _colorsByCaption[caption] = ParseColor(rule?.Color);
+                Color? parsed = ParseColor(rule?.Color);
+                _colorsByCaption[caption] = parsed;
+                _activeColor = parsed;
             }
             catch (Exception ex)
             {
@@ -146,14 +152,11 @@ namespace SqlBeaver.Environments
                 var tabs = new List<FrameworkElement>();
                 foreach (FrameworkElement root in roots)
                     CollectByTypeName(root, "DocumentTabItem", tabs, 0);
+                // SSMS 22: a aba de documento é "DragUndockHeader" (confirmado por diagnóstico),
+                // fora da subárvore de DocumentGroupControl — coleta direta em todas as janelas.
                 if (tabs.Count == 0)
                     foreach (FrameworkElement root in roots)
-                    {
-                        var groups = new List<FrameworkElement>();
-                        CollectByTypeName(root, "DocumentGroupControl", groups, 0);
-                        foreach (FrameworkElement group in groups)
-                            CollectByTypeName(group, "DragUndockHeader", tabs, 0);
-                    }
+                        CollectByTypeName(root, "DragUndockHeader", tabs, 0);
                 // Fallback: qualquer tipo terminado em "TabItem" em qualquer janela.
                 if (tabs.Count == 0)
                     foreach (FrameworkElement root in roots)
@@ -165,38 +168,27 @@ namespace SqlBeaver.Environments
                     return;
                 }
 
-                LogDiagOnce(tabs);
+                LogFoundTabDiagOnce(tabs);
+
+                // Legenda truncada não casa: pinta TODAS as abas com a cor do ambiente ativo.
+                Color? color = _activeColor;
 
                 foreach (FrameworkElement tab in tabs)
                 {
-                    string header = NormalizeCaption((tab as HeaderedContentControl)?.Header?.ToString());
-                    // Sem cor aprendida para esta legenda: NÃO limpa — abas visitadas mantêm a cor.
-                    if (header == null || !_colorsByCaption.TryGetValue(header, out Color? color))
-                        continue;
-
-                    // Candidatos de pintura: as bordas curvas conhecidas e, como fallback, qualquer
-                    // Border/Grid descendente (mais builds do SSMS são pintadas).
+                    // Alvo de pintura: bordas curvas conhecidas, senão qualquer Border/Grid
+                    // descendente; em último caso a própria aba.
                     FrameworkElement target =
                         FindDescendantByTypeName(tab, "SimpleCurvedBorder") ??
                         FindDescendantByTypeName(tab, "TopCurvedBorder") ??
                         FindDescendantOfType<Border>(tab) ??
-                        FindDescendantOfType<System.Windows.Controls.Grid>(tab);
-
-                    if (target == null)
-                    {
-                        // Nenhum descendente pintável bateu: cai para a própria aba (pintura pode não surtir efeito).
-                        target = tab;
-                        if (!_loggedTargetFallback)
-                        {
-                            _loggedTargetFallback = true;
-                            Log.Info("TabColorizer DIAG: alvo de pintura caiu para a raiz da aba (sem SimpleCurvedBorder/TopCurvedBorder/Border/Grid descendente) — pintura pode não surtir efeito.");
-                        }
-                    }
+                        FindDescendantOfType<System.Windows.Controls.Grid>(tab) ??
+                        tab;
 
                     if (color == null)
                     {
                         target.ClearValue(Control.BackgroundProperty);
                         target.ClearValue(Border.BackgroundProperty);
+                        target.ClearValue(Panel.BackgroundProperty);
                     }
                     else
                     {
@@ -363,6 +355,38 @@ namespace SqlBeaver.Environments
                 visited += CollectBroadCandidateTypeNames(child, names, depth + 1);
             }
             return visited;
+        }
+
+        /// <summary>
+        /// Diagnóstico (uma vez) quando abas SÃO encontradas: loga contagem, tipo da 1ª aba,
+        /// cor ativa, o tipo do alvo de pintura escolhido e os tipos descendentes — confirma
+        /// se o elemento pintado é o fundo real da aba neste build do SSMS.
+        /// </summary>
+        private static void LogFoundTabDiagOnce(List<FrameworkElement> tabs)
+        {
+            if (_loggedDiag) return;
+            _loggedDiag = true;
+            try
+            {
+                FrameworkElement t = tabs[0];
+                var names = new SortedSet<string>(StringComparer.Ordinal);
+                CollectDescendantTypeNames(t, names, 0, 6);
+                FrameworkElement target =
+                    FindDescendantByTypeName(t, "SimpleCurvedBorder") ??
+                    FindDescendantByTypeName(t, "TopCurvedBorder") ??
+                    FindDescendantOfType<Border>(t) ??
+                    FindDescendantOfType<System.Windows.Controls.Grid>(t);
+                string list = names.Count > 0 ? string.Join(", ", names) : "(nenhum)";
+                Log.Info("TabColorizer DIAG abas=" + tabs.Count
+                    + "; tipo=" + t.GetType().Name
+                    + "; corAtiva=" + (_activeColor.HasValue ? _activeColor.Value.ToString() : "null")
+                    + "; alvoPintura=" + (target?.GetType().Name ?? "(própria aba)")
+                    + "; descendentes: " + list);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("TabColorizer.LogFoundTabDiagOnce", ex);
+            }
         }
 
         /// <summary>

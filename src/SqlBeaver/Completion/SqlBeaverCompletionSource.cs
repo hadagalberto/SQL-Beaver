@@ -83,6 +83,7 @@ namespace SqlBeaver.Completion
         private readonly MetadataCache _cache;
         private ActiveConnection _connection;
         private bool _loggedContentType;
+        private static bool _loggedFirstItems;
 
         // Tabelas locais do batch atual; populado em GetCompletionContextAsync antes de BuildItems.
         private IReadOnlyList<LocalTableDef> _pendingLocals;
@@ -181,8 +182,11 @@ namespace SqlBeaver.Completion
 
                 ImmutableArray<CompletionItem> items = BuildItems(context, metadata, scope, connection);
 
-                // DIAGNÓSTICO (verboso): loga cada popup com contexto, partial, contagens e gatilho.
-                Log.Info($"[completion] #{_instanceId} popup: ctx={context.Kind}, partial='{context.Partial}', trigger={trigger.Reason}/'{trigger.Character}', itens={items.Length}, tabelas={metadata.Tables.Count}, escopo={scope.Count}, db={connection.Database}.");
+                if (!_loggedFirstItems)
+                {
+                    _loggedFirstItems = true;
+                    Log.Info($"[completion] #{_instanceId} primeiro popup: ctx={context.Kind}, partial='{context.Partial}', itens={items.Length}, tabelas={metadata.Tables.Count}, db={connection.Database}.");
+                }
 
                 return Task.FromResult(new CompletionContext(items));
             }
