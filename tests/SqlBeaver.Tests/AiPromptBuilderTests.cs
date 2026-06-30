@@ -54,6 +54,37 @@ namespace SqlBeaver.Tests
         }
 
         [Fact]
+        public void Generate_WithExistingSql_AsContext_IncludesItAndKeepsGenerateSystem()
+        {
+            AiPrompt p = AiPromptBuilder.BuildGenerateFromComment(
+                "-- agora some o valor", "", "SELECT * FROM Vendas v", rewrite: false);
+            Assert.Contains("SELECT * FROM Vendas v", p.User);
+            Assert.Contains("CONTEXTO", p.User);          // descreve o SQL existente como contexto
+            Assert.Contains("APENAS", p.System);          // System de geração (não o de reescrita)
+            Assert.DoesNotContain("Reescreva", p.System);
+        }
+
+        [Fact]
+        public void Generate_Rewrite_UsesRewriteSystemAndTargetsExistingSql()
+        {
+            AiPrompt p = AiPromptBuilder.BuildGenerateFromComment(
+                "-- agrupe por cliente", "", "SELECT * FROM Vendas v", rewrite: true);
+            Assert.Contains("Reescreva", p.System);       // System de reescrita
+            Assert.Contains("SELECT * FROM Vendas v", p.User);
+            Assert.Contains("reescrever", p.User);        // seção "SQL a reescrever"
+        }
+
+        [Fact]
+        public void Generate_ExistingSql_ComesBeforeSchema()
+        {
+            AiPrompt p = AiPromptBuilder.BuildGenerateFromComment(
+                "-- x", "Tabela: dbo.Pessoas (Id int PK)", "SELECT 1 AS existente", rewrite: false);
+            int idxSql = p.User.IndexOf("SELECT 1 AS existente", System.StringComparison.Ordinal);
+            int idxSchema = p.User.IndexOf("Tabela: dbo.Pessoas", System.StringComparison.Ordinal);
+            Assert.True(idxSql >= 0 && idxSchema >= 0 && idxSql < idxSchema);
+        }
+
+        [Fact]
         public void Explain_IncludesSqlAndIsPtBr()
         {
             AiPrompt p = AiPromptBuilder.BuildExplain("SELECT * FROM Pessoas", "");

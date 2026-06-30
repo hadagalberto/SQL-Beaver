@@ -617,13 +617,43 @@ namespace SqlBeaver.Commands
                 if (doc == null) { ShowStatus("IA: nenhum documento ativo."); return; }
 
                 TextSelection sel = doc.Selection;
+                string selectionText = sel?.Text ?? string.Empty;
+                bool hasSelection = !string.IsNullOrWhiteSpace(selectionText);
 
-                int commentEndLine;
-                string comment = ExtractComment(doc, sel, out commentEndLine);
-                if (string.IsNullOrWhiteSpace(comment))
+                string comment;
+                string existingSql;
+                bool rewrite;
+                int commentEndLine = 0;
+                EditPoint repTop = null, repBottom = null;
+
+                if (hasSelection)
                 {
-                    ShowStatus("posicione o cursor numa linha de comentário descrevendo o que gerar.");
-                    return;
+                    // Modo reescrever: a seleção é o SQL a alterar; a instrução vem de um comentário
+                    // dentro dela (ou da linha do cursor). O resultado SUBSTITUI a seleção.
+                    comment = ExtractInstructionFromText(selectionText);
+                    if (string.IsNullOrWhiteSpace(comment))
+                        comment = ExtractComment(doc, sel, out commentEndLine);
+                    if (string.IsNullOrWhiteSpace(comment))
+                    {
+                        ShowStatus("inclua na seleção um comentário (-- ...) com a instrução do que mudar.");
+                        return;
+                    }
+                    existingSql = selectionText;
+                    rewrite = true;
+                    repTop = sel.TopPoint.CreateEditPoint();
+                    repBottom = sel.BottomPoint.CreateEditPoint();
+                }
+                else
+                {
+                    comment = ExtractComment(doc, sel, out commentEndLine);
+                    if (string.IsNullOrWhiteSpace(comment))
+                    {
+                        ShowStatus("posicione o cursor numa linha de comentário descrevendo o que gerar.");
+                        return;
+                    }
+                    // Sem seleção: script inteiro vira contexto (a IA gera coerente com o existente).
+                    existingSql = doc.StartPoint.CreateEditPoint().GetText(doc.EndPoint);
+                    rewrite = false;
                 }
 
                 // Conexão capturada na UI thread (null quando não há janela conectada).
@@ -645,7 +675,7 @@ namespace SqlBeaver.Commands
 
                         // EncodeFull é puro — schema COMPLETO para a geração (sem escopo ainda).
                         string schema = md != null ? Ai.AiSchemaToon.EncodeFull(md) : "";
-                        Ai.AiPrompt prompt = Ai.AiPromptBuilder.BuildGenerateFromComment(comment, schema);
+                        Ai.AiPrompt prompt = Ai.AiPromptBuilder.BuildGenerateFromComment(comment, schema, existingSql, rewrite);
 
                         ShowStatus("consultando a IA…");
                         Ai.AiResult result = await CallAiAsync(prompt);
@@ -666,18 +696,29 @@ namespace SqlBeaver.Commands
                             return;
                         }
 
-                        // Insere o SQL numa nova linha logo após a última linha do comentário.
-                        EditPoint ep = doc.StartPoint.CreateEditPoint();
-                        int lastLine = doc.EndPoint.Line;
-                        int targetLine = commentEndLine < lastLine ? commentEndLine : lastLine;
-                        ep.MoveToLineAndOffset(targetLine, 1);
-                        ep.EndOfLine();
+                        if (rewrite && repTop != null && repBottom != null)
+                        {
+                            // Substitui a seleção pelo SQL reescrito.
+                            dte.UndoContext.Open("SQL Beaver IA: reescrever SQL");
+                            try { repTop.ReplaceText(repBottom, sql, (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers); }
+                            finally { dte.UndoContext.Close(); }
+                            ShowStatus("SQL reescrito pela IA.");
+                        }
+                        else
+                        {
+                            // Insere o SQL numa nova linha logo após a última linha do comentário.
+                            EditPoint ep = doc.StartPoint.CreateEditPoint();
+                            int lastLine = doc.EndPoint.Line;
+                            int targetLine = commentEndLine < lastLine ? commentEndLine : lastLine;
+                            ep.MoveToLineAndOffset(targetLine, 1);
+                            ep.EndOfLine();
 
-                        dte.UndoContext.Open("SQL Beaver IA: gerar SQL");
-                        try { ep.Insert("\r\n" + sql); }
-                        finally { dte.UndoContext.Close(); }
+                            dte.UndoContext.Open("SQL Beaver IA: gerar SQL");
+                            try { ep.Insert("\r\n" + sql); }
+                            finally { dte.UndoContext.Close(); }
 
-                        ShowStatus("SQL gerado pela IA inserido.");
+                            ShowStatus("SQL gerado pela IA inserido.");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -902,6 +943,40 @@ namespace SqlBeaver.Commands
                 ProviderConnectionType = conn.ProviderConnectionType,
             };
             return true;
+        }
+
+        /// <summary>
+        /// Extrai a instrução (texto dos comentários) de um bloco que pode misturar comentários
+        /// e SQL — usado no modo reescrever, onde a seleção contém a instrução em <c>-- ...</c>
+        /// e/ou <c>/* ... */</c> junto do SQL. Retorna vazio se não houver comentário.
+        /// </summary>
+        private static string ExtractInstructionFromText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+
+            var sb = new System.Text.StringBuilder();
+
+            // Bloco /* ... */ (primeiro encontrado).
+            int b = text.IndexOf("/*", StringComparison.Ordinal);
+            if (b >= 0)
+            {
+                int e = text.IndexOf("*/", b + 2, StringComparison.Ordinal);
+                string inner = e >= 0 ? text.Substring(b + 2, e - (b + 2)) : text.Substring(b + 2);
+                sb.Append(inner.Trim());
+            }
+
+            // Linhas iniciadas por --.
+            foreach (string raw in text.Replace("\r\n", "\n").Split('\n'))
+            {
+                string line = raw.Trim();
+                if (line.StartsWith("--", StringComparison.Ordinal))
+                {
+                    if (sb.Length > 0) sb.Append(' ');
+                    sb.Append(line.Substring(2).Trim());
+                }
+            }
+
+            return sb.ToString().Trim();
         }
 
         /// <summary>
