@@ -57,8 +57,6 @@ namespace SqlBeaver.Editing
             try
             {
                 ITextView view = args.TextView;
-                if (_broker.IsCompletionActive(view))
-                    return; // já há popup aberto: não reabrir
 
                 SnapshotPoint caret = view.Caret.Position.BufferPosition;
                 ITextSnapshot snap = caret.Snapshot;
@@ -72,6 +70,13 @@ namespace SqlBeaver.Editing
 
                 if (ConnectionService.GetActiveConnection() == null)
                     return;
+
+                // Sessão presa: ao digitar "SELECT" abre uma sessão FreeIdentifier (keywords) que
+                // o VS mantém aberta enquanto se digita " * FROM " — só FILTRA a lista velha, nunca
+                // recalcula para AfterFromJoin. Descarta a sessão antiga para reabrir no contexto certo.
+                IAsyncCompletionSession existing = _broker.GetSession(view);
+                if (existing != null)
+                    existing.Dismiss();
 
                 CancellationToken token = executionContext.OperationContext.UserCancellationToken;
 
