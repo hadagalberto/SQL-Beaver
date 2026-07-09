@@ -11,6 +11,7 @@ namespace SqlBeaver.Ai
             new AnthropicProvider(),
             new OpenAiProvider(),
             new GeminiProvider(),
+            new OpenRouterProvider(),
         };
 
         /// <summary>Provedor pelo Id; Anthropic se o Id for desconhecido/nulo.</summary>

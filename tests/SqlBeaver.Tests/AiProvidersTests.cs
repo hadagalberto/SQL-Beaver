@@ -127,9 +127,28 @@ namespace SqlBeaver.Tests
         {
             Assert.Equal("openai", AiProviders.ById("openai").Id);
             Assert.Equal("gemini", AiProviders.ById("GEMINI").Id);
+            Assert.Equal("openrouter", AiProviders.ById("OpenRouter").Id);
             Assert.Equal("anthropic", AiProviders.ById("nope").Id); // default
             Assert.Equal("anthropic", AiProviders.ById(null).Id);
-            Assert.Equal(3, AiProviders.All.Count);
+            Assert.Equal(4, AiProviders.All.Count);
+        }
+
+        [Fact]
+        public void OpenRouter_DefaultModel_IsFreeRouter()
+        {
+            Assert.Equal("openrouter/free", new OpenRouterProvider().DefaultModel);
+        }
+
+        [Fact]
+        public void OpenRouter_ReusesOpenAiBody_WithChosenModel()
+        {
+            // OpenRouter usa o mesmo corpo do OpenAI; garante que o modelo escolhido vai no JSON.
+            var req = new AiRequest { System = "s", User = "u", MaxTokens = 128 };
+            string json = OpenAiProvider.BuildRequestBody(req, "openrouter/free");
+            // DataContractJsonSerializer escapa '/' como '\/' — checa as partes do id do modelo.
+            Assert.Contains("openrouter", json);
+            Assert.Contains("free", json);
+            Assert.Contains("\"messages\"", json);
         }
     }
 }
