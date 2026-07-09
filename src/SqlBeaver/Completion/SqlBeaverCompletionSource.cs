@@ -442,7 +442,7 @@ namespace SqlBeaver.Completion
                 filters: ImmutableArray<CompletionFilter>.Empty,
                 suffix: suffix,
                 insertText: insert,
-                sortText: column.Name,
+                sortText: "1_" + column.Name, // colunas do catálogo ANTES das funções built-in ("4_")
                 filterText: column.Name,
                 attributeIcons: ImmutableArray<ImageElement>.Empty);
         }
@@ -744,7 +744,7 @@ namespace SqlBeaver.Completion
                 filters: ImmutableArray<CompletionFilter>.Empty,
                 suffix: suffix,
                 insertText: insert,
-                sortText: column.Name,
+                sortText: "0_" + column.Name, // colunas locais (#temp/@tabela/CTE) no topo
                 filterText: column.Name,
                 attributeIcons: ImmutableArray<ImageElement>.Empty);
         }

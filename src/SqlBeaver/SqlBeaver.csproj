@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <RootNamespace>SqlBeaver</RootNamespace>
-    <Version>1.9.9</Version>
+    <Version>1.9.11</Version>
     <RuntimeIdentifier>win</RuntimeIdentifier>
     <LangVersion>latest</LangVersion>
     <UseWPF>true</UseWPF>
