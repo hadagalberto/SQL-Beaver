@@ -68,6 +68,18 @@ namespace SqlBeaver.Editing
                 if (!ShouldAutoPopup(context.Kind))
                     return;
 
+                // ColumnContext sem tabela no escopo só ofereceria funções built-in (ruído) —
+                // ex.: "SELECT " sem FROM. Não força popup; deixa o usuário digitar. Com FROM
+                // (mesmo à frente do cursor) o escopo resolve e as colunas aparecem.
+                if (context.Kind == SqlContextKind.ColumnContext)
+                {
+                    int posAfter = Math.Min(snap.Length, pos + Window);
+                    string after = snap.GetText(pos, posAfter - pos);
+                    var scope = StatementScopeAnalyzer.GetTablesInScope(before + after, before.Length);
+                    if (scope == null || scope.Count == 0)
+                        return;
+                }
+
                 if (ConnectionService.GetActiveConnection() == null)
                     return;
 
