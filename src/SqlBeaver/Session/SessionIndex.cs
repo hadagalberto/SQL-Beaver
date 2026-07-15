@@ -31,6 +31,12 @@ namespace SqlBeaver.Session
 
         [DataMember(Name = "contentHash")]
         public string ContentHash { get; set; }
+
+        /// <summary>Caminho REAL do arquivo salvo no disco (null para rascunho/untitled).
+        /// Quando presente e existente, a restauração reabre o ARQUIVO (mantendo a
+        /// referência de arquivo salvo), não o conteúdo como query nova.</summary>
+        [DataMember(Name = "originalPath", EmitDefaultValue = false)]
+        public string OriginalPath { get; set; }
     }
 
     /// <summary>Contrato de serialização para index.json.</summary>

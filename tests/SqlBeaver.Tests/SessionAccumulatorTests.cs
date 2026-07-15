@@ -140,5 +140,17 @@ namespace SqlBeaver.Tests
             Assert.Equal("2024-06-11T10:00:00", e.SavedAt);
             Assert.Equal("tab-01.sql", e.File);
         }
+
+        [Fact]
+        public void Upsert_CarriesOriginalPath_AndUpdatesIt()
+        {
+            var acc = new SessionAccumulator();
+            acc.Upsert("A", "h1", null, null, "2024-06-11T10:00:00", @"C:\scripts\a.sql");
+            Assert.Equal(@"C:\scripts\a.sql", acc.Entries[0].OriginalPath);
+
+            // upsert do mesmo caption sem caminho (virou rascunho) atualiza para null
+            acc.Upsert("A", "h2", null, null, "2024-06-11T10:05:00", null);
+            Assert.Null(acc.Entries[0].OriginalPath);
+        }
     }
 }

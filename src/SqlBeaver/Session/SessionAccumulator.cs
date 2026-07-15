@@ -38,7 +38,8 @@ namespace SqlBeaver.Session
         /// Atualiza hash/server/database/savedAt mantendo a posição. Retorna o nome do
         /// arquivo de aba (bare, sem diretório) associado ao caption.
         /// </summary>
-        public string Upsert(string caption, string contentHash, string server, string database, string savedAt)
+        public string Upsert(string caption, string contentHash, string server, string database, string savedAt,
+            string originalPath = null)
         {
             if (caption == null) throw new ArgumentNullException(nameof(caption));
 
@@ -48,6 +49,7 @@ namespace SqlBeaver.Session
                 existing.Server = server;
                 existing.Database = database;
                 existing.SavedAt = savedAt;
+                existing.OriginalPath = originalPath;
                 return existing.File;
             }
 
@@ -59,7 +61,8 @@ namespace SqlBeaver.Session
                 Server = server,
                 Database = database,
                 SavedAt = savedAt,
-                ContentHash = contentHash
+                ContentHash = contentHash,
+                OriginalPath = originalPath
             };
             _byCaption[caption] = entry;
             _order.Add(caption);

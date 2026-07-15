@@ -182,12 +182,20 @@ namespace SqlBeaver.Session
                     // Nome de aba ESTÁVEL por caption (atribuído na 1ª vez e mantido).
                     // O acumulador é puro: devolve "tab-NN.sql"; juntamos com o dir.
                     bool isActive = string.Equals(fullName, activeDocFullName, StringComparison.OrdinalIgnoreCase);
+
+                    // Arquivo REAL salvo no disco (fora do temp) → guardamos o caminho para
+                    // reabrir o ARQUIVO na restauração (mantém a referência de salvo).
+                    bool fileExists = !string.IsNullOrWhiteSpace(fullName) && File.Exists(fullName);
+                    bool isScratch = PromptSuppressionRule.IsScratchPath(fullName, fileExists, Path.GetTempPath());
+                    string originalPath = (fileExists && !isScratch) ? fullName : null;
+
                     string tabName = _accumulator.Upsert(
                         caption,
                         hash,
                         isActive ? activeConn?.Server : null,
                         isActive ? activeConn?.Database : null,
-                        DateTime.Now.ToString("o"));
+                        DateTime.Now.ToString("o"),
+                        originalPath);
                     string tabPath = Path.Combine(dir, tabName);
 
                     // Escrita verificada — NUNCA suprimir o prompt sem o conteúdo
@@ -238,9 +246,6 @@ namespace SqlBeaver.Session
                     try { savedFlag = doc.Saved; }
                     catch { savedFlag = true; } // em dúvida, não mexer
 
-                    bool fileExists = !string.IsNullOrWhiteSpace(fullName) && File.Exists(fullName);
-                    bool isScratch = PromptSuppressionRule.IsScratchPath(fullName, fileExists, Path.GetTempPath());
-
                     if (PromptSuppressionRule.ShouldMarkSaved(savedFlag, isScratch, snapshotWritten))
                     {
                         try { doc.Saved = true; }
@@ -273,12 +278,13 @@ namespace SqlBeaver.Session
             {
                 entries.Add(new SessionEntry
                 {
-                    File        = Path.Combine(dir, e.File),
-                    Caption     = e.Caption,
-                    Server      = e.Server,
-                    Database    = e.Database,
-                    SavedAt     = e.SavedAt,
-                    ContentHash = e.ContentHash
+                    File         = Path.Combine(dir, e.File),
+                    Caption      = e.Caption,
+                    Server       = e.Server,
+                    Database     = e.Database,
+                    SavedAt      = e.SavedAt,
+                    ContentHash  = e.ContentHash,
+                    OriginalPath = e.OriginalPath
                 });
             }
 
@@ -397,6 +403,15 @@ namespace SqlBeaver.Session
                 {
                     try
                     {
+                        // Arquivo REAL salvo ainda existente no disco → reabre o ARQUIVO
+                        // (mantém a referência de salvo, não vira query nova).
+                        if (!string.IsNullOrEmpty(entry.OriginalPath) && File.Exists(entry.OriginalPath))
+                        {
+                            Navigation.DefinitionService.OpenExistingFile(entry.OriginalPath);
+                            restored++;
+                            continue;
+                        }
+
                         if (string.IsNullOrEmpty(entry.File) || !File.Exists(entry.File))
                             continue;
 

@@ -307,6 +307,27 @@ namespace SqlBeaver.Navigation
         /// não dispare o diálogo "Conectar ao servidor" de cada aba reaberta; o usuário conecta
         /// manualmente se quiser (ao executar, o SSMS pergunta a conexão normalmente).
         /// </summary>
+        /// <summary>
+        /// Reabre um arquivo .sql REAL do disco pelo caminho (igual File &gt; Open), preservando a
+        /// referência de arquivo salvo. Usado na restauração de sessão para abas que eram arquivos
+        /// salvos — não vira query nova/untitled. O SSMS pode pedir conexão ao abrir (comportamento
+        /// nativo de abrir .sql); é aceitável para um arquivo real.
+        /// </summary>
+        internal static void OpenExistingFile(string path)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            try
+            {
+                var dte2 = Package.GetGlobalService(typeof(DTE)) as DTE2;
+                dte2?.ItemOperations?.OpenFile(path);
+                Log.Info("SessionRestore: arquivo salvo reaberto: " + path);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("OpenExistingFile: falhou (" + path + ")", ex);
+            }
+        }
+
         internal static void OpenDisconnectedQueryWindow(string content)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
