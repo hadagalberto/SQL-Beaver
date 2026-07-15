@@ -23,7 +23,9 @@ if (Get-Process -Name "Ssms" -ErrorAction SilentlyContinue) {
 $ssmsBase   = Join-Path $env:LOCALAPPDATA "Microsoft\SSMS"
 $localRoots = @()
 if (Test-Path $ssmsBase) {
+    # Só pastas de INSTÂNCIA "<versão>_<hash>" (ex.: 22.0_cd5e6ef6); ignora BackupFiles/vshub/etc.
     $localRoots = Get-ChildItem $ssmsBase -Directory -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Name -match '^\d+\.\d+_' } |
                   Select-Object -ExpandProperty FullName
 }
 

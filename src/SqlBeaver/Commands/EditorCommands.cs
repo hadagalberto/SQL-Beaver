@@ -174,6 +174,25 @@ namespace SqlBeaver.Commands
             }
         }
 
+        /// <summary>Liga/desliga a reabertura das abas da última sessão ao iniciar o SSMS.</summary>
+        public static void ToggleSessionRestore()
+        {
+            try
+            {
+                bool now = !SessionSettings.RestoreOnStartup;
+                SessionSettings.RestoreOnStartup = now; // setter persiste em session-settings.json
+                ShowStatus(now
+                    ? "reabrir abas ao iniciar: LIGADO."
+                    : "reabrir abas ao iniciar: DESLIGADO (abas não serão restauradas).");
+                Log.Info("SessionSettings: RestoreOnStartup = " + now);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Alternar reabrir abas ao iniciar", ex);
+                ShowStatus("falha ao alternar reabrir abas — veja Output > SQL Beaver");
+            }
+        }
+
         public static void Environments()
         {
             try

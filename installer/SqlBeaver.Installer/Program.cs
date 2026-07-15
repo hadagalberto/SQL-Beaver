@@ -100,8 +100,13 @@ namespace SqlBeaver.Installer
         {
             var roots = new List<string>();
             string baseDir = Path.Combine(LocalAppData, "Microsoft", "SSMS");
-            if (Directory.Exists(baseDir))
-                roots.AddRange(Directory.GetDirectories(baseDir));
+            if (!Directory.Exists(baseDir)) return roots;
+            // Só pastas de INSTÂNCIA "<versão>_<hash>" (ex.: 22.0_cd5e6ef6). Ignora BackupFiles,
+            // vshub, SSMS_18__settings etc. (pastas de apoio, não instâncias).
+            var rx = new Regex(@"^\d+\.\d+_", RegexOptions.IgnoreCase);
+            foreach (string d in Directory.GetDirectories(baseDir))
+                if (rx.IsMatch(Path.GetFileName(d)))
+                    roots.Add(d);
             return roots;
         }
 

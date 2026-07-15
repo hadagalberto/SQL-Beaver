@@ -374,6 +374,14 @@ namespace SqlBeaver.Session
                 // Deixa o shell assentar antes de abrir janelas
                 await Task.Delay(2000).ConfigureAwait(false);
 
+                // Configuração do usuário: reabrir abas ao iniciar (padrão ligado).
+                if (!SessionSettings.RestoreOnStartup)
+                {
+                    Log.Info("SessionRestoreService: 'reabrir abas ao iniciar' DESLIGADO — nada restaurado.");
+                    CleanupLastSession();
+                    return;
+                }
+
                 string indexPath = IndexPath;
                 if (!File.Exists(indexPath)) return;
 
@@ -386,17 +394,6 @@ namespace SqlBeaver.Session
                 }
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
-                // Espera uma conexão existir antes de reabrir as abas. Assim a janela criada via
-                // ScriptFactory HERDA a conexão atual (a que o usuário escolheu no prompt nativo do
-                // startup) SEM disparar um novo "Conectar ao servidor" — reconecta "onde você estava".
-                // Sai cedo assim que houver conexão; se não houver (ambiente vazio), abre após o timeout.
-                for (int i = 0; i < 60; i++)
-                {
-                    if (Connection.ConnectionService.GetActiveConnection() != null) break;
-                    await Task.Delay(500).ConfigureAwait(false);
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                }
 
                 int restored = 0;
                 foreach (SessionEntry entry in entries)
@@ -418,8 +415,9 @@ namespace SqlBeaver.Session
                         string content = File.ReadAllText(entry.File, Encoding.UTF8);
                         if (string.IsNullOrEmpty(content)) continue;
 
-                        // Via ScriptFactory: herda a conexão atual (sem novo prompt quando já há conexão).
-                        Navigation.DefinitionService.OpenNewQueryWindow(content);
+                        // Rascunho: reabre DESCONECTADO (arquivo temp) — sem prompt de "Conectar ao
+                        // servidor". Você conecta ao executar, se quiser.
+                        Navigation.DefinitionService.OpenDisconnectedQueryWindow(content);
                         restored++;
                     }
                     catch (Exception entryEx)

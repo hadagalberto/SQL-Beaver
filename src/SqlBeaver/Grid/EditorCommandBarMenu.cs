@@ -27,6 +27,7 @@ namespace SqlBeaver.Grid
         private static CommandBarButton _findReferencesButton;
         private static CommandBarButton _queryHistoryButton;
         private static CommandBarButton _recoverSessionButton;
+        private static CommandBarButton _toggleRestoreButton;
         private static CommandBarButton _environmentsButton;
 
         private static CommandBarButton _insertColumnsButton;
@@ -82,6 +83,7 @@ namespace SqlBeaver.Grid
                 _findReferencesButton = AddButton(editorBar, "SQL Beaver: Localizar referências", OnFindReferences, beginGroup: false);
                 _queryHistoryButton   = AddButton(editorBar, "SQL Beaver: Histórico de consultas", OnQueryHistory,   beginGroup: true);
                 _recoverSessionButton = AddButton(editorBar, "SQL Beaver: Recuperar consultas…",   OnRecoverSession, beginGroup: false);
+                _toggleRestoreButton  = AddButton(editorBar, "SQL Beaver: Reabrir abas ao iniciar (ligar/desligar)", OnToggleRestore, beginGroup: false);
                 _environmentsButton   = AddButton(editorBar, "SQL Beaver: Ambientes (cores)…",     OnEnvironments,   beginGroup: false);
                 _insertColumnsButton  = AddButton(editorBar, "SQL Beaver: Inserir/Selecionar colunas (substitui *)…", OnInsertColumns,  beginGroup: true);
                 _summarizeScriptButton= AddButton(editorBar, "SQL Beaver: Summarize Script…",       OnSummarizeScript, beginGroup: false);
@@ -383,6 +385,12 @@ namespace SqlBeaver.Grid
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             Commands.EditorCommands.Environments();
+        }
+
+        private static void OnToggleRestore(CommandBarButton ctrl, ref bool cancelDefault)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Commands.EditorCommands.ToggleSessionRestore();
         }
 
         private static void OnInsertColumns(CommandBarButton ctrl, ref bool cancelDefault)
