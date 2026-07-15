@@ -96,16 +96,30 @@ namespace SqlBeaver.Installer
         // Descoberta (equivalente ao uninstall.ps1/deploy.ps1)
         // ─────────────────────────────────────────────────────────────────────
 
+        // A extensão só roda no SSMS 22+ (manifest InstallationTarget [22.0,)). SSMS 19/20 têm
+        // outro shell (não carregam o vsix) e nem entendem /updateconfiguration → NÃO tocar neles.
+        private const int MinSsmsMajor = 22;
+
+        // Extrai o major da versão do SSMS a partir de um caminho ("...Management Studio 22\..."
+        // ou pasta de instância "22.0_hash"). Retorna 0 se não achar.
+        private static int SsmsMajorFromPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return 0;
+            Match m = Regex.Match(path, @"Management Studio\s+(\d+)", RegexOptions.IgnoreCase);
+            if (m.Success && int.TryParse(m.Groups[1].Value, out int v)) return v;
+            m = Regex.Match(Path.GetFileName(path), @"^(\d+)\.\d+_");
+            if (m.Success && int.TryParse(m.Groups[1].Value, out int v2)) return v2;
+            return 0;
+        }
+
         private static List<string> FindLocalRoots()
         {
             var roots = new List<string>();
             string baseDir = Path.Combine(LocalAppData, "Microsoft", "SSMS");
             if (!Directory.Exists(baseDir)) return roots;
-            // Só pastas de INSTÂNCIA "<versão>_<hash>" (ex.: 22.0_cd5e6ef6). Ignora BackupFiles,
-            // vshub, SSMS_18__settings etc. (pastas de apoio, não instâncias).
-            var rx = new Regex(@"^\d+\.\d+_", RegexOptions.IgnoreCase);
+            // Só INSTÂNCIAS "<versão>_<hash>" com versão >= 22 (ignora BackupFiles/vshub/etc. e SSMS antigos).
             foreach (string d in Directory.GetDirectories(baseDir))
-                if (rx.IsMatch(Path.GetFileName(d)))
+                if (SsmsMajorFromPath(d) >= MinSsmsMajor)
                     roots.Add(d);
             return roots;
         }
@@ -123,6 +137,7 @@ namespace SqlBeaver.Installer
                 if (string.IsNullOrEmpty(pf) || !Directory.Exists(pf)) continue;
                 foreach (string root in SafeGlobDirs(pf, "Microsoft SQL Server Management Studio*"))
                 {
+                    if (SsmsMajorFromPath(root) < MinSsmsMajor) continue; // pula SSMS 19/20/21
                     foreach (string exe in SafeFindFiles(root, "Ssms.exe"))
                         dirs.Add(Path.GetDirectoryName(exe));
                 }
@@ -140,7 +155,7 @@ namespace SqlBeaver.Installer
                     using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(sub))
                     {
                         string exe = key?.GetValue(null) as string;
-                        if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
+                        if (!string.IsNullOrEmpty(exe) && File.Exists(exe) && SsmsMajorFromPath(exe) >= MinSsmsMajor)
                             dirs.Add(Path.GetDirectoryName(exe));
                     }
                 }

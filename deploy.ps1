@@ -26,9 +26,9 @@ if (Get-Process -Name "Ssms" -ErrorAction SilentlyContinue) {
 $ssmsBase   = Join-Path $env:LOCALAPPDATA "Microsoft\SSMS"
 $localRoots = @()
 if (Test-Path $ssmsBase) {
-    # Só pastas de INSTÂNCIA "<versão>_<hash>" (ex.: 22.0_cd5e6ef6); ignora BackupFiles/vshub/etc.
+    # Só INSTÂNCIAS "<versão>_<hash>" com versão >= 22 (ignora BackupFiles/vshub e SSMS antigos).
     $localRoots = Get-ChildItem $ssmsBase -Directory -ErrorAction SilentlyContinue |
-                  Where-Object { $_.Name -match '^\d+\.\d+_' } |
+                  Where-Object { $_.Name -match '^(\d+)\.\d+_' -and [int]$matches[1] -ge 22 } |
                   Select-Object -ExpandProperty FullName
 }
 
@@ -36,7 +36,8 @@ $ideDirs = @()
 $progRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ } | Select-Object -Unique
 foreach ($pr in $progRoots) {
     $glob = Join-Path $pr "Microsoft SQL Server Management Studio*"
-    Get-ChildItem $glob -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-ChildItem $glob -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match 'Studio\s+(\d+)' -and [int]$matches[1] -ge 22 } | ForEach-Object {
         Get-ChildItem -Path $_.FullName -Recurse -Filter "Ssms.exe" -ErrorAction SilentlyContinue |
             ForEach-Object { $ideDirs += $_.DirectoryName }
     }
