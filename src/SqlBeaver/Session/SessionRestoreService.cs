@@ -395,6 +395,17 @@ namespace SqlBeaver.Session
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
+                // Espera uma conexão existir antes de reabrir as abas. Assim a janela criada via
+                // ScriptFactory HERDA a conexão atual SEM disparar um novo "Conectar ao servidor" —
+                // e o IntelliSense funciona (precisa de conexão para ler a metadata). Sai cedo
+                // quando houver conexão; se não houver (ambiente vazio), abre após o timeout.
+                for (int i = 0; i < 60; i++)
+                {
+                    if (Connection.ConnectionService.GetActiveConnection() != null) break;
+                    await Task.Delay(500).ConfigureAwait(false);
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                }
+
                 int restored = 0;
                 foreach (SessionEntry entry in entries)
                 {
@@ -415,9 +426,10 @@ namespace SqlBeaver.Session
                         string content = File.ReadAllText(entry.File, Encoding.UTF8);
                         if (string.IsNullOrEmpty(content)) continue;
 
-                        // Rascunho: reabre DESCONECTADO (arquivo temp) — sem prompt de "Conectar ao
-                        // servidor". Você conecta ao executar, se quiser.
-                        Navigation.DefinitionService.OpenDisconnectedQueryWindow(content);
+                        // Rascunho: via ScriptFactory — HERDA a conexão atual (sem novo prompt quando
+                        // já há conexão) e o IntelliSense funciona. Abrir desconectado quebrava a
+                        // completion (sem conexão = sem metadata).
+                        Navigation.DefinitionService.OpenNewQueryWindow(content);
                         restored++;
                     }
                     catch (Exception entryEx)
