@@ -288,8 +288,15 @@ Você escolhe o provedor e fornece a sua própria chave de API.
 > **substitui** (inclusive nas palavras-chave); deixá-lo ligado faz as duas fontes
 > competirem e quebra a filtragem do popup.
 
-1. Pré-requisito: **SSMS 22** (amd64). Pegue o `dist\SqlBeaver-X.Y.Z.vsix` (build
-   compartilhável) ou gere o `.vsix` (ver "Desenvolvimento").
+**Jeito fácil (instalador .exe):** na [página de releases](https://github.com/hadagalberto/SQL-Beaver/releases/latest),
+baixe o **`SqlBeaver-Setup.exe`** e execute com o SSMS fechado. Ele baixa a versão mais
+recente, remove a antiga, instala numa pasta única e **preserva suas configurações**
+(chaves de IA, ambientes, snippets, histórico). Sem repositório, sem linha de comando,
+sem elevação (instala por usuário). Depois é só o passo obrigatório abaixo.
+
+**Manual:**
+1. Pré-requisito: **SSMS 22** (amd64). Pegue o `SqlBeaver-X.Y.Z.vsix` da release
+   ou gere o `.vsix` (ver "Desenvolvimento").
 2. Feche o SSMS e **dê duplo clique no `.vsix`** (instala via VSIXInstaller) — ou,
    em máquina de desenvolvimento, `.\deploy.ps1 -Install`.
 3. **Desative o IntelliSense nativo:**

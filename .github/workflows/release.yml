@@ -33,19 +33,32 @@ jobs:
       - name: Build VSIX (MSBuild completo)
         run: msbuild SqlBeaver.slnx /p:Configuration=Release /t:Rebuild /restore /v:m
 
-      - name: Stage versioned VSIX
+      # Instalador .exe standalone (baixa o .vsix mais recente e instala; projeto fora da slnx).
+      - name: Build instalador (.exe)
+        run: msbuild installer/SqlBeaver.Installer/SqlBeaver.Installer.csproj /p:Configuration=Release /restore /v:m
+
+      - name: Stage artefatos versionados
         shell: pwsh
         run: |
           $v = "${{ github.ref_name }}".TrimStart('v')
           Copy-Item dist/SqlBeaver.vsix "SqlBeaver-$v.vsix"
-          Write-Host "Empacotado SqlBeaver-$v.vsix"
+          Copy-Item installer/SqlBeaver.Installer/bin/Release/net48/SqlBeaver-Setup.exe "SqlBeaver-Setup.exe"
+          Write-Host "Empacotado SqlBeaver-$v.vsix + SqlBeaver-Setup.exe"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: SqlBeaver-*.vsix
+          files: |
+            SqlBeaver-*.vsix
+            SqlBeaver-Setup.exe
           generate_release_notes: true
           body: |
-            Extensão SQL Beaver para SSMS 22 (amd64). Instale com duplo clique no `.vsix`
-            e **desative o IntelliSense nativo** (Tools > Options > Text Editor > Transact-SQL >
-            IntelliSense). VSIX não assinado — o instalador mostra aviso de publisher não verificado.
+            Extensão SQL Beaver para SSMS 22 (amd64).
+
+            **Instalação fácil:** baixe e execute o **`SqlBeaver-Setup.exe`** — ele baixa a versão
+            mais recente, remove a antiga, instala e preserva suas configurações (chaves de IA,
+            ambientes, snippets, histórico). Não precisa do repositório nem de linha de comando.
+
+            **Manual:** duplo clique no `.vsix`. Em ambos os casos, **desative o IntelliSense nativo**
+            (Tools > Options > Text Editor > Transact-SQL > IntelliSense). Binários não assinados —
+            o Windows/instalador pode mostrar aviso de publisher não verificado.

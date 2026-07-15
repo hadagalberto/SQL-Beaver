@@ -38,9 +38,14 @@ jobs:
       - name: Build VSIX (MSBuild completo)
         run: msbuild SqlBeaver.slnx /p:Configuration=Release /t:Rebuild /restore /v:m
 
-      - name: Upload VSIX artifact
+      - name: Build instalador (.exe)
+        run: msbuild installer/SqlBeaver.Installer/SqlBeaver.Installer.csproj /p:Configuration=Release /restore /v:m
+
+      - name: Upload artefatos
         uses: actions/upload-artifact@v4
         with:
-          name: SqlBeaver-vsix
-          path: dist/SqlBeaver.vsix
+          name: SqlBeaver-build
+          path: |
+            dist/SqlBeaver.vsix
+            installer/SqlBeaver.Installer/bin/Release/net48/SqlBeaver-Setup.exe
           if-no-files-found: error
