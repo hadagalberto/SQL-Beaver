@@ -22,5 +22,26 @@ namespace SqlBeaver.Tests
             Assert.True(SessionRestoreService.ShouldWriteIndex(1));
             Assert.True(SessionRestoreService.ShouldWriteIndex(5));
         }
+
+        [Fact]
+        public void ShouldClearSavedSession_UserClosedAllTabs_ReturnsTrue()
+        {
+            // fechamento REAL (fora do teardown) que zerou o conjunto → descartar a sessão
+            Assert.True(SessionRestoreService.ShouldClearSavedSession(0, shuttingDown: false));
+        }
+
+        [Fact]
+        public void ShouldClearSavedSession_DuringShutdown_ReturnsFalse()
+        {
+            // no teardown as abas fecham uma a uma — NÃO é "usuário fechou tudo"
+            Assert.False(SessionRestoreService.ShouldClearSavedSession(0, shuttingDown: true));
+        }
+
+        [Fact]
+        public void ShouldClearSavedSession_StillHasTabs_ReturnsFalse()
+        {
+            Assert.False(SessionRestoreService.ShouldClearSavedSession(2, shuttingDown: false));
+            Assert.False(SessionRestoreService.ShouldClearSavedSession(2, shuttingDown: true));
+        }
     }
 }

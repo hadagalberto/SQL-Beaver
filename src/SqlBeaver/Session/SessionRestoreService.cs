@@ -349,6 +349,17 @@ namespace SqlBeaver.Session
                 }
                 catch { /* best-effort */ }
 
+                // Fechou a ÚLTIMA aba num fechamento REAL (não teardown): a sessão salva deixa de
+                // existir. Sem isto o índice antigo sobrevive (WriteIndexFromAccumulator não
+                // sobrescreve com conjunto vazio) e as abas voltavam no próximo startup mesmo
+                // tendo sido fechadas.
+                if (ShouldClearSavedSession(_accumulator.Entries.Count, _shuttingDown))
+                {
+                    CleanupLastSession();
+                    Log.Info("SessionRestoreService: todas as abas fechadas — sessão salva descartada.");
+                    return;
+                }
+
                 WriteIndexFromAccumulator(dir);
             }
             catch (Exception ex)
@@ -363,6 +374,14 @@ namespace SqlBeaver.Session
         /// a sessão salva (guarda contra o teardown do SSMS).
         /// </summary>
         internal static bool ShouldWriteIndex(int entryCount) => entryCount > 0;
+
+        /// <summary>
+        /// A sessão salva deve ser DESCARTADA? Só quando o conjunto ficou vazio por fechamento
+        /// REAL de abas (fora do teardown do SSMS). No teardown as abas fecham uma a uma e o
+        /// conjunto não pode ser interpretado como "usuário fechou tudo". Puro, para testes.
+        /// </summary>
+        internal static bool ShouldClearSavedSession(int remainingEntries, bool shuttingDown)
+            => !shuttingDown && remainingEntries == 0;
 
         // ---------------------------------------------------------------
         // Startup — reabrir as abas da última sessão
