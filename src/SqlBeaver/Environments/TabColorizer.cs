@@ -24,6 +24,9 @@ namespace SqlBeaver.Environments
         private static WindowEvents _windowEvents;
         private static DispatcherTimer _reapplyTimer;
         private static int _reapplyTicksLeft;
+        // Vigia a conexão ATIVA: trocar de banco/servidor NÃO dispara evento de janela, então
+        // sem isto a aba mantinha a cor do ambiente anterior (só a barra atualizava).
+        private static DispatcherTimer _watchTimer;
         private static readonly Dictionary<string, Color?> _colorsByCaption =
             new Dictionary<string, Color?>(StringComparer.OrdinalIgnoreCase);
         // Cor do ambiente da conexão ATIVA. O texto da aba vem truncado ("SQLQuery2.sq...")
@@ -75,6 +78,25 @@ namespace SqlBeaver.Environments
                     ReapplyAll();
                     if (--_reapplyTicksLeft <= 0) _reapplyTimer.Stop();
                 };
+
+                // Vigia mudanças de conexão/banco (não geram evento de janela): se a cor do
+                // ambiente ativo mudar, repinta as abas.
+                _watchTimer = new DispatcherTimer(DispatcherPriority.ApplicationIdle)
+                {
+                    Interval = TimeSpan.FromMilliseconds(1500),
+                };
+                _watchTimer.Tick += (s, e) =>
+                {
+                    try
+                    {
+                        Color? before = _activeColor;
+                        LearnActiveWindow(_dte);
+                        if (!Nullable.Equals(before, _activeColor))
+                            ScheduleReapply();
+                    }
+                    catch { /* nunca propagar do timer */ }
+                };
+                _watchTimer.Start();
 
                 LearnActiveWindow(dte);
                 ScheduleReapply();
