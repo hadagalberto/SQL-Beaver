@@ -114,7 +114,16 @@ namespace SqlBeaver.Environments
             {
                 ThreadHelper.ThrowIfNotOnUIThread();
                 string caption = NormalizeCaption(dte.ActiveWindow?.Caption);
-                if (string.IsNullOrEmpty(caption)) return;
+
+                // Chaves adicionais do documento ATIVO: nome ("SQLQuery2.sql") e caminho completo.
+                // O texto/DataContext da aba costuma expor uma delas — casar por documento é bem
+                // mais confiável do que pela legenda (que aparece truncada na UI).
+                string docName = null, docFull = null;
+                try { docName = NormalizeCaption(dte.ActiveDocument?.Name); } catch { }
+                try { docFull = NormalizeCaption(dte.ActiveDocument?.FullName); } catch { }
+
+                if (string.IsNullOrEmpty(caption) && string.IsNullOrEmpty(docName) && string.IsNullOrEmpty(docFull))
+                    return;
 
                 ActiveConnection connection = ConnectionService.GetActiveConnection();
                 EnvironmentRule rule = connection == null
@@ -122,7 +131,9 @@ namespace SqlBeaver.Environments
                     : EnvironmentStore.MatchActive(connection.Server, connection.Database);
 
                 Color? parsed = ParseColor(rule?.Color);
-                _colorsByCaption[caption] = parsed;
+                if (!string.IsNullOrEmpty(caption)) _colorsByCaption[caption] = parsed;
+                if (!string.IsNullOrEmpty(docName)) _colorsByCaption[docName] = parsed;
+                if (!string.IsNullOrEmpty(docFull)) _colorsByCaption[docFull] = parsed;
                 _activeColor = parsed;
             }
             catch (Exception ex)
@@ -192,11 +203,13 @@ namespace SqlBeaver.Environments
 
                 LogFoundTabDiagOnce(tabs);
 
-                // Legenda truncada não casa: pinta TODAS as abas com a cor do ambiente ativo.
-                Color? color = _activeColor;
-
                 foreach (FrameworkElement tab in tabs)
                 {
+                    // Cor DA ABA: identifica o documento da aba e usa a cor aprendida para ele.
+                    // Só cai na cor do ambiente ativo quando não dá para identificar.
+                    if (!TryMatchTabColor(TryReadTabKeys(tab), out Color? color))
+                        color = _activeColor;
+
                     // Alvo de pintura: bordas curvas conhecidas, senão qualquer Border/Grid
                     // descendente; em último caso a própria aba.
                     FrameworkElement target =
@@ -254,6 +267,84 @@ namespace SqlBeaver.Environments
             {
                 Log.Error("TabColorizer.RefreshAfterRulesChanged", ex);
             }
+        }
+
+        /// <summary>
+        /// Candidatos de identificação de uma aba, em ordem de confiabilidade: propriedades string
+        /// do DataContext (view-model do frame — Title/DocumentMoniker/caminho, NÃO truncados),
+        /// Header, texto do TabItemTextControl, ToolTip e AutomationProperties.Name.
+        /// </summary>
+        private static List<string> TryReadTabKeys(FrameworkElement tab)
+        {
+            var keys = new List<string>();
+            try
+            {
+                foreach (string v in ReadStringProps(tab.DataContext)) keys.Add(v);
+
+                string header = (tab as HeaderedContentControl)?.Header?.ToString();
+                if (!string.IsNullOrWhiteSpace(header)) keys.Add(header);
+
+                FrameworkElement txt = FindDescendantByTypeName(tab, "TabItemTextControl");
+                if (txt != null)
+                {
+                    foreach (string v in ReadStringProps(txt)) keys.Add(v);
+                    foreach (string v in ReadStringProps(txt.DataContext)) keys.Add(v);
+                }
+
+                string tip = tab.ToolTip?.ToString();
+                if (!string.IsNullOrWhiteSpace(tip)) keys.Add(tip);
+
+                string autoName = System.Windows.Automation.AutomationProperties.GetName(tab);
+                if (!string.IsNullOrWhiteSpace(autoName)) keys.Add(autoName);
+            }
+            catch { /* melhor esforço */ }
+            return keys;
+        }
+
+        /// <summary>Valores de propriedades string públicas do objeto (melhor esforço).</summary>
+        private static IEnumerable<string> ReadStringProps(object o)
+        {
+            if (o == null) yield break;
+            System.Reflection.PropertyInfo[] props;
+            try { props = o.GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance); }
+            catch { yield break; }
+
+            foreach (System.Reflection.PropertyInfo p in props)
+            {
+                if (p.GetIndexParameters().Length > 0) continue;
+                string s = null;
+                try { s = p.GetValue(o) as string; } catch { continue; }
+                if (!string.IsNullOrWhiteSpace(s)) yield return s;
+            }
+        }
+
+        /// <summary>
+        /// Resolve a cor DA ABA: casa um dos candidatos com uma legenda/documento já aprendido
+        /// (exato e, depois, por conteúdo — a legenda da aba costuma conter o nome do documento).
+        /// </summary>
+        private static bool TryMatchTabColor(List<string> keys, out Color? color)
+        {
+            color = null;
+            foreach (string raw in keys)
+            {
+                string k = NormalizeCaption(raw);
+                if (!string.IsNullOrEmpty(k) && _colorsByCaption.TryGetValue(k, out color))
+                    return true;
+            }
+            foreach (string raw in keys)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                foreach (KeyValuePair<string, Color?> kv in _colorsByCaption)
+                {
+                    // chave curta demais geraria falso positivo
+                    if (kv.Key.Length >= 8 && raw.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        color = kv.Value;
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static string NormalizeCaption(string caption)
@@ -399,10 +490,25 @@ namespace SqlBeaver.Environments
                     FindDescendantOfType<Border>(t) ??
                     FindDescendantOfType<System.Windows.Controls.Grid>(t);
                 string list = names.Count > 0 ? string.Join(", ", names) : "(nenhum)";
+
+                List<string> keys = TryReadTabKeys(t);
+                bool matched = TryMatchTabColor(keys, out Color? tabColor);
+                var shown = new List<string>();
+                foreach (string k in keys)
+                {
+                    string s = k.Length > 60 ? k.Substring(0, 57) + "…" : k;
+                    if (!shown.Contains(s)) shown.Add(s);
+                    if (shown.Count >= 8) break;
+                }
+
                 Log.Info("TabColorizer DIAG abas=" + tabs.Count
                     + "; tipo=" + t.GetType().Name
+                    + "; dataContext=" + (t.DataContext?.GetType().FullName ?? "null")
                     + "; corAtiva=" + (_activeColor.HasValue ? _activeColor.Value.ToString() : "null")
+                    + "; casouPorDocumento=" + matched
+                    + (matched ? "; corDaAba=" + (tabColor.HasValue ? tabColor.Value.ToString() : "null") : "")
                     + "; alvoPintura=" + (target?.GetType().Name ?? "(própria aba)")
+                    + "; candidatos=[" + string.Join(" | ", shown) + "]"
                     + "; descendentes: " + list);
             }
             catch (Exception ex)
