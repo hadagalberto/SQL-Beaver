@@ -68,11 +68,11 @@ namespace SqlBeaver.Connection
             object connectionWrapper = GetProperty(scriptFactory, "CurrentlyActiveWndConnectionInfo");
             object uiConnectionInfo = GetProperty(connectionWrapper, "UIConnectionInfo");
             if (uiConnectionInfo == null)
-                return null; // janela sem conexão: situação normal, sem log
+                return FallbackConnection("UIConnectionInfo ausente");
 
             var server = GetProperty(uiConnectionInfo, "ServerName") as string;
             if (string.IsNullOrEmpty(server))
-                return null;
+                return FallbackConnection("ServerName vazio");
 
             string database = GetAdvancedOption(uiConnectionInfo, "DATABASE");
             if (string.IsNullOrEmpty(database))
@@ -92,7 +92,7 @@ namespace SqlBeaver.Connection
                     ActiveConnection reused = ReuseLastGoodEntra(server, database);
                     if (reused != null) return reused;
                     LogEntraWithoutTokenOnce();
-                    return null; // degrada em silêncio: melhor sem sugestões que spam de erro 40607
+                    return FallbackConnection("Entra sem conexão viva");
                 }
 
                 // A conexão viva é a fonte da verdade: AdvancedOptions["DATABASE"] pode estar
@@ -123,13 +123,13 @@ namespace SqlBeaver.Connection
                     }
 
                     StoreGoodEntra(server, live.AccessToken, null, null);
-                    return new ActiveConnection
+                    return Remember(new ActiveConnection
                     {
                         Server = server,
                         Database = database,
                         ConnectionString = tokenBuilder.ConnectionString,
                         AccessToken = live.AccessToken,
-                    };
+                    });
                 }
 
                 if (!string.IsNullOrEmpty(live.ConnectionString))
@@ -147,19 +147,19 @@ namespace SqlBeaver.Connection
                     }
 
                     StoreGoodEntra(server, null, live.ConnectionString, live.ConnectionType);
-                    return new ActiveConnection
+                    return Remember(new ActiveConnection
                     {
                         Server = server,
                         Database = database,
                         ConnectionString = csBuilder.ConnectionString,
                         ProviderConnectionType = live.ConnectionType,
-                    };
+                    });
                 }
 
                 ActiveConnection reusedNoToken = ReuseLastGoodEntra(server, database);
                 if (reusedNoToken != null) return reusedNoToken;
                 LogEntraWithoutTokenOnce();
-                return null;
+                return FallbackConnection("Entra sem token/connection string");
             }
 
             var builder = new SqlConnectionStringBuilder
@@ -185,12 +185,12 @@ namespace SqlBeaver.Connection
             if (IsTrue(GetAdvancedOption(uiConnectionInfo, "ENCRYPT_CONNECTION")))
                 builder.Encrypt = true;
 
-            return new ActiveConnection
+            return Remember(new ActiveConnection
             {
                 Server = server,
                 Database = database,
                 ConnectionString = builder.ConnectionString,
-            };
+            });
         }
 
         // Heurística do OpenHint-SQL: o SSMS costuma deixar a conta Windows em UserName
@@ -353,6 +353,33 @@ namespace SqlBeaver.Connection
         // Última conexão Entra resolvida com sucesso, para reaproveitar quando a conexão viva
         // (GetCurrentConnection) voltar null transitoriamente — janela restaurada/nova via
         // ScriptFactory perde o "current" por timing/foco, matando as sugestões sem motivo.
+        // Última conexão resolvida com SUCESSO (qualquer modo: Entra, SQL ou Windows auth).
+        // O SSMS nem sempre expõe UIConnectionInfo/ServerName da janela ativa (janela restaurada,
+        // troca de foco, editor de arquivo) — sem este fallback a completion recusava participar
+        // e NENHUMA janela de sugestão aparecia, sem log nenhum.
+        private static ActiveConnection _lastGoodConnection;
+        private static bool _loggedFallbackConnection;
+
+        /// <summary>Memoriza a conexão resolvida para uso como fallback.</summary>
+        private static ActiveConnection Remember(ActiveConnection c)
+        {
+            if (c != null) _lastGoodConnection = c;
+            return c;
+        }
+
+        /// <summary>Fallback quando a janela não expõe conexão: usa a última boa (com log único).</summary>
+        private static ActiveConnection FallbackConnection(string reason)
+        {
+            if (_lastGoodConnection == null) return null;
+            if (!_loggedFallbackConnection)
+            {
+                _loggedFallbackConnection = true;
+                Log.Info("Conexão da janela não exposta pelo SSMS (" + reason + ") — usando a última conexão boa ("
+                    + _lastGoodConnection.Server + " / " + _lastGoodConnection.Database + ") para as sugestões.");
+            }
+            return _lastGoodConnection;
+        }
+
         private static string _lastGoodServer;
         private static string _lastGoodToken;        // modo (b): token Entra
         private static string _lastGoodConnString;   // modo (c): connection string do provider vivo

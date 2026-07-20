@@ -84,6 +84,7 @@ namespace SqlBeaver.Completion
         private ActiveConnection _connection;
         private bool _loggedContentType;
         private static bool _loggedFirstItems;
+        private static bool _loggedMetadataWait;
 
         // Tabelas locais do batch atual; populado em GetCompletionContextAsync antes de BuildItems.
         private IReadOnlyList<LocalTableDef> _pendingLocals;
@@ -135,6 +136,26 @@ namespace SqlBeaver.Completion
                 _connection = ConnectionService.GetActiveConnection();
                 if (_connection == null)
                     return CompletionStartData.DoesNotParticipateInCompletion;
+
+                // Metadata ainda carregando: NÃO abrir sessão. Abrir uma sessão vazia deixa o popup
+                // preso (o framework só FILTRA a lista, não recalcula) e o IntelliSense parece morto
+                // mesmo depois que a carga termina. TryGet dispara a carga em background; assim que
+                // ela chega, a próxima tecla participa normalmente.
+                if (_cache.TryGet(_connection.Server, _connection.Database,
+                        new MetadataRequest
+                        {
+                            ConnectionString       = _connection.ConnectionString,
+                            AccessToken            = _connection.AccessToken,
+                            ProviderConnectionType = _connection.ProviderConnectionType,
+                        }) == null)
+                {
+                    if (!_loggedMetadataWait)
+                    {
+                        _loggedMetadataWait = true;
+                        Log.Info("[completion] metadata ainda carregando — as sugestões aparecem assim que a carga terminar.");
+                    }
+                    return CompletionStartData.DoesNotParticipateInCompletion;
+                }
 
                 var applicableToSpan = new SnapshotSpan(
                     triggerLocation.Snapshot,
