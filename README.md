@@ -294,6 +294,10 @@ recente, remove a antiga, instala numa pasta única e **preserva suas configura�
 (chaves de IA, ambientes, snippets, histórico). Sem repositório, sem linha de comando,
 sem elevação (instala por usuário). Depois é só o passo obrigatório abaixo.
 
+O instalador **pergunta** se você quer apagar as configurações salvas (padrão: **não**).
+Um backup em `%LOCALAPPDATA%\SqlBeaver.bak-<data>` é feito **sempre**, mesmo ao apagar.
+Sem interação: `SqlBeaver-Setup.exe --purge` (apaga) ou `--keep` (preserva, sem perguntar).
+
 **Manual:**
 1. Pré-requisito: **SSMS 22** (amd64). Pegue o `SqlBeaver-X.Y.Z.vsix` da release
    ou gere o `.vsix` (ver "Desenvolvimento").

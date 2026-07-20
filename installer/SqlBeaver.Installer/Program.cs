@@ -31,14 +31,23 @@ namespace SqlBeaver.Installer
         private static StreamWriter _log;
         private static string _logPath;
 
-        private static int Main()
+        private static int Main(string[] args)
         {
             InitLog();
             try
             {
                 Console.Title = "SQL Beaver — Instalador";
                 Head("SQL Beaver — Instalador");
-                Info("Instala/atualiza a extensão no SSMS 22+. A sua configuração é preservada.");
+
+                bool purgeFlag = args != null && args.Any(a =>
+                    a.Equals("--purge", StringComparison.OrdinalIgnoreCase) ||
+                    a.Equals("/purge", StringComparison.OrdinalIgnoreCase) ||
+                    a.Equals("-p", StringComparison.OrdinalIgnoreCase));
+                bool keepFlag = args != null && args.Any(a =>
+                    a.Equals("--keep", StringComparison.OrdinalIgnoreCase) ||
+                    a.Equals("/keep", StringComparison.OrdinalIgnoreCase));
+
+                Info("Instala/atualiza a extensão no SSMS 22+.");
                 Info("Log detalhado: " + _logPath + "\n");
 
                 if (SsmsRunning())
@@ -63,13 +72,40 @@ namespace SqlBeaver.Installer
                 }
                 Info("VSIXInstaller: " + vsixInstaller);
 
-                // 1) Backup da configuração do usuário (preservada de qualquer forma).
+                // 1) Configuração do usuário: backup SEMPRE; apagar só se pedido.
                 string cfg = Path.Combine(LocalAppData, "SqlBeaver");
-                if (Directory.Exists(cfg))
+                bool hasCfg = Directory.Exists(cfg);
+                bool purge = purgeFlag;
+                if (hasCfg && !purgeFlag && !keepFlag)
+                    purge = AskYesNo("Apagar as configurações salvas (chaves de IA, ambientes, snippets, histórico, sessões)?");
+
+                string backupPath = null;
+                if (hasCfg)
                 {
-                    string backup = cfg + ".bak-" + DateTime.Now.ToString("yyyyMMddHHmmss");
-                    try { CopyDir(cfg, backup); Ok("Configuração salva em backup: " + backup); }
-                    catch (Exception ex) { Warn("Backup da config falhou (" + ex.Message + ") — ela não será apagada mesmo assim."); }
+                    backupPath = cfg + ".bak-" + DateTime.Now.ToString("yyyyMMddHHmmss");
+                    try { CopyDir(cfg, backupPath); Ok("Configuração salva em backup: " + backupPath); }
+                    catch (Exception ex) { backupPath = null; Warn("Backup da config falhou (" + ex.Message + ")."); }
+                }
+
+                if (purge && hasCfg)
+                {
+                    if (backupPath == null)
+                    {
+                        Warn("Backup falhou — NÃO vou apagar a configuração (segurança).");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            Directory.Delete(cfg, recursive: true);
+                            Ok("Configurações APAGADAS. Backup em: " + backupPath);
+                        }
+                        catch (Exception ex) { Warn("Não consegui apagar a configuração (" + ex.Message + ")."); }
+                    }
+                }
+                else if (hasCfg)
+                {
+                    Info("Configuração preservada (rode com --purge para apagar).");
                 }
 
                 // 2) Baixar o .vsix mais recente da release.
@@ -330,6 +366,27 @@ namespace SqlBeaver.Installer
         // ─────────────────────────────────────────────────────────────────────
         // Helpers
         // ─────────────────────────────────────────────────────────────────────
+
+        /// <summary>Pergunta s/N no console (padrão NÃO). Sem console interativo, devolve false.</summary>
+        private static bool AskYesNo(string question)
+        {
+            try
+            {
+                if (Console.IsInputRedirected) return false;
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.Write(question + " [s/N]: ");
+                Console.ResetColor();
+                string line = Console.ReadLine();
+                string t = (line ?? string.Empty).Trim();
+                bool yes = t.Equals("s", StringComparison.OrdinalIgnoreCase)
+                        || t.Equals("sim", StringComparison.OrdinalIgnoreCase)
+                        || t.Equals("y", StringComparison.OrdinalIgnoreCase)
+                        || t.Equals("yes", StringComparison.OrdinalIgnoreCase);
+                ToLog("", question + " -> " + (yes ? "SIM (apagar)" : "NÃO (preservar)"));
+                return yes;
+            }
+            catch { return false; }
+        }
 
         private static bool SsmsRunning()
         {
